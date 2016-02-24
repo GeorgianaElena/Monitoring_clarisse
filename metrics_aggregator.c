@@ -9,7 +9,10 @@ int main(int argc, char **argv)
   MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
   char* parents_addr[nprocs];
-  initialize_monitoring(parents_addr);
+  CManager connection_managers[nprocs];
+
+  initialize_monitoring(parents_addr, connection_managers);
+  send_to_parent(parents_addr, connection_managers);
   
   MPI_Finalize();
 
@@ -60,15 +63,19 @@ void send_addr_to_parent(char *addr)
 {
   int rank, tag = 0;
 
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);  
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
   for(int i = 1; i <= DEGREE; ++i) {
     MPI_Send(addr, ADDRESS_SIZE, MPI_CHAR, rank * DEGREE + i, tag, MPI_COMM_WORLD);
   }
 }
 
-CManager compute_evpath_addr(char *addr)
+void compute_evpath_addr(char *addr, CManager* connection_managers)
 {
+  int rank;
+
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
   CManager cm;
   EVstone stone;
   char *string_list_addr;
@@ -81,10 +88,10 @@ CManager compute_evpath_addr(char *addr)
   
   sprintf(addr, "%d:%s", stone, string_list_addr);
 
-  return cm;
+  connection_managers[rank] = cm;
 }
 
-void initialize_monitoring(char* parents_addr[])
+void initialize_monitoring(char* parents_addr[], CManager* connection_managers)
 {
   int rank;
 
@@ -101,10 +108,54 @@ void initialize_monitoring(char* parents_addr[])
   if(!is_leaf()) {
     /* Compute evpath address and send to children */
     char myaddr[ADDRESS_SIZE];
-    CManager cm = compute_evpath_addr(myaddr);
+    compute_evpath_addr(myaddr, connection_managers);
 
     send_addr_to_parent(myaddr);
 
-    CMrun_network(cm); 
+    if(rank == 0) {
+      CMrun_network(connection_managers[rank]);
+    }
+  }
+}
+
+void send_to_parent(char* parents_addr[], CManager* connection_managers)
+{
+  int rank;
+
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+  if(rank != 0) {
+    /* Send rank evpath */
+    CManager cm;
+    simple_rec data;
+    EVstone stone;
+    EVsource source;
+    char string_list[2048];
+    attr_list contact_list;
+    EVstone remote_stone;
+
+    if (sscanf(parents_addr[rank], "%d:%s", &remote_stone, &string_list[0]) != 2) {
+        printf("Bad arguments \"%s\"\n", parents_addr[rank]);
+        exit(0);
+    }
+
+    if(is_leaf()) {
+      cm = CManager_create();
+      CMlisten(cm);
+      stone = EValloc_stone(cm);
+    } else {
+      cm = connection_managers[rank];
+      CMlisten(cm);
+      stone = EValloc_stone(cm);
+    }    
+
+    contact_list = attr_list_from_string(string_list);
+    EVassoc_bridge_action(cm, stone, contact_list, remote_stone);
+
+    source = EVcreate_submit_handle(cm, stone, simple_format_list);
+    data.integer_field = rank;
+    EVsubmit(source, &data, NULL);
+
+    CMrun_network(cm);
   }
 }

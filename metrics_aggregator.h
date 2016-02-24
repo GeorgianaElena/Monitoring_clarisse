@@ -36,8 +36,9 @@ static int get_parent();
 
 void recv_addr_from_parent(char *addr);
 void send_addr_to_parent(char *addr);
-void initialize_monitoring(char* parents_addr[]);
+void initialize_monitoring(char* parents_addr[], CManager* connection_managers);
+void send_to_parent(char* parents_addr[], CManager* connection_managers);
 
-CManager compute_evpath_addr(char *addr);
+void compute_evpath_addr(char *addr, CManager* connection_managers);
 
 #endif
