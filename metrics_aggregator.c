@@ -1,5 +1,7 @@
 #include "metrics_aggregator.h"
 
+static node_state_t current_state;
+
 int main(int argc, char **argv)
 {
   int rank, nprocs;
@@ -8,23 +10,24 @@ int main(int argc, char **argv)
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
-  char* parents_addr[nprocs];
-  CManager connection_managers[nprocs];
+  initialize_monitoring();
+  MPI_Barrier(MPI_COMM_WORLD);
 
-  initialize_monitoring(parents_addr, connection_managers);
-  send_to_parent(parents_addr, connection_managers);
-  
+  create_stones();
+
+  start_communication();
+
   MPI_Finalize();
 
   return 0; 
 }
 
-static int simple_handler(CManager cm, void *vevent, void *client_data, attr_list attrs)
+static int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
 {
-  simple_rec_ptr event = vevent;
+  metrics_t_ptr event = vevent;
   printf("I got %d\n", event->integer_field);
 
-  return 1;
+  return 0;
 }
 
 static int is_leaf()
@@ -70,28 +73,23 @@ void send_addr_to_parent(char *addr)
   }
 }
 
-void compute_evpath_addr(char *addr, CManager* connection_managers)
+void compute_evpath_addr(char *addr)
 {
   int rank;
 
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-  CManager cm;
-  EVstone stone;
   char *string_list_addr;
-  cm = CManager_create();
-  CMlisten(cm);
+  current_state.conn_mgr = CManager_create();
+  CMlisten(current_state.conn_mgr);
 
-  stone = EValloc_stone(cm);
-  EVassoc_terminal_action(cm, stone, simple_format_list, simple_handler, NULL);
-  string_list_addr = attr_list_to_string(CMget_contact_list(cm));
+  current_state.multi_stone = EValloc_stone(current_state.conn_mgr);
+  string_list_addr = attr_list_to_string(CMget_contact_list(current_state.conn_mgr));
   
-  sprintf(addr, "%d:%s", stone, string_list_addr);
-
-  connection_managers[rank] = cm;
+  sprintf(addr, "%d:%s", current_state.multi_stone, string_list_addr);
 }
 
-void initialize_monitoring(char* parents_addr[], CManager* connection_managers)
+void initialize_monitoring()
 {
   int rank;
 
@@ -102,60 +100,107 @@ void initialize_monitoring(char* parents_addr[], CManager* connection_managers)
     char addr[ADDRESS_SIZE];
     recv_addr_from_parent(addr);
 
-    parents_addr[rank] = addr;
+    memcpy(current_state.parent_addr, addr, ADDRESS_SIZE);
   }
 
   if(!is_leaf()) {
     /* Compute evpath address and send to children */
     char myaddr[ADDRESS_SIZE];
-    compute_evpath_addr(myaddr, connection_managers);
+    compute_evpath_addr(myaddr);
 
     send_addr_to_parent(myaddr);
-
-    if(rank == 0) {
-      CMrun_network(connection_managers[rank]);
-    }
   }
 }
 
-void send_to_parent(char* parents_addr[], CManager* connection_managers)
+void create_stones()
 {
   int rank;
 
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
   if(rank != 0) {
-    /* Send rank evpath */
-    CManager cm;
-    simple_rec data;
-    EVstone stone;
-    EVsource source;
-    char string_list[2048];
-    attr_list contact_list;
-    EVstone remote_stone;
-
-    if (sscanf(parents_addr[rank], "%d:%s", &remote_stone, &string_list[0]) != 2) {
-        printf("Bad arguments \"%s\"\n", parents_addr[rank]);
-        exit(0);
-    }
+    //create the bridge stone
 
     if(is_leaf()) {
-      cm = CManager_create();
-      CMlisten(cm);
-      stone = EValloc_stone(cm);
-    } else {
-      cm = connection_managers[rank];
-      CMlisten(cm);
-      stone = EValloc_stone(cm);
-    }    
+      current_state.conn_mgr = CManager_create();
+      CMlisten(current_state.conn_mgr);
+    }
 
-    contact_list = attr_list_from_string(string_list);
-    EVassoc_bridge_action(cm, stone, contact_list, remote_stone);
+    CManager cm = current_state.conn_mgr;
 
-    source = EVcreate_submit_handle(cm, stone, simple_format_list);
-    data.integer_field = rank;
+    current_state.bridge_stone = EValloc_stone(cm);
+    EVstone output = current_state.bridge_stone;
+
+    char string_list[ADDRESS_SIZE];
+    EVstone remote_stone;
+    
+    if (sscanf(current_state.parent_addr, "%d:%s", &remote_stone, &string_list[0]) != 2) {
+      printf("Bad argument \"%s\"\n", current_state.parent_addr);
+      exit(0);
+    }
+
+    attr_list contact_list = attr_list_from_string(string_list);
+
+    EVassoc_bridge_action(cm, output, contact_list, remote_stone);
+    EVstone_set_output(cm, current_state.multi_stone, 0, output);
+  } else {
+    current_state.terminal_stone = EValloc_stone(current_state.conn_mgr);
+
+    EVassoc_terminal_action(current_state.conn_mgr, current_state.terminal_stone,
+                            metrics_format_list, final_result, NULL);
+    EVstone_set_output(current_state.conn_mgr, current_state.multi_stone, 0, current_state.terminal_stone);
+  }
+
+  //create the multistone
+
+  if(!is_leaf()) {
+    static char *multi_func = "{\n\
+      int found = 0;\n\
+      metrics_t *a;\n\
+      int degree = -1;\n\
+      if (EVcount_metrics_t()) {\n\
+          a = EVdata_metrics_t(0);\n\
+          degree = a->degree;\n\
+      }\n\
+      \n\
+      if (EVcount_metrics_t() == degree) {\n\
+          int i;\n\
+          metrics_t c;\n\
+          for(i = 0; i < degree; i++) {\n\
+            a = EVdata_metrics_t(i);\n\
+            c.integer_field += a->integer_field;\n\
+            /* submit the new, combined event */\n\
+          }\n\
+          for(i = 0; i < degree; i++) {\n\
+            /* discard the used events */\n\
+            EVdiscard_metrics_t(0);\n\
+          }\n\
+          \n\
+          c.degree = degree;\n\
+          EVsubmit(0, c);\n\
+      }\n\
+    }\0\0";  
+
+    char *mq = create_multityped_action_spec(queue_list, multi_func);
+    EVassoc_multi_action(current_state.conn_mgr, current_state.multi_stone, mq, NULL);
+    
+    CMrun_network(current_state.conn_mgr);
+  }
+}
+
+void start_communication()
+{
+  int rank;
+
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+  EVsource source = EVcreate_submit_handle(current_state.conn_mgr, current_state.bridge_stone, metrics_format_list);
+  metrics_t data;
+  data.integer_field = rank;
+  data.degree = DEGREE;
+
+  while (1) {
     EVsubmit(source, &data, NULL);
-
-    CMrun_network(cm);
+    sleep(2);
   }
 }
