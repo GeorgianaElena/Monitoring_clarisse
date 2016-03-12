@@ -16,11 +16,15 @@
 
 typedef struct {
 	char parent_addr[ADDRESS_SIZE];
+	char own_addr[ADDRESS_SIZE];
+
 	EVstone multi_stone;
 	EVstone bridge_stone;
+	EVstone split_stone;
+	EVstone terminal_stone;
 
 	//valid only for root of the tree
-	EVstone terminal_stone;
+	EVstone agreg_terminal_stone;
 	CManager conn_mgr;
 } node_state_t;
 
@@ -39,7 +43,7 @@ static FMField metrics_field_list[] =
 
 static FMStructDescRec metrics_format_list[] =
 {
-  {"metrics_t", metrics_field_list, sizeof(metrics_t), NULL},
+  {"metrics_t", metrics_field_list, 8, NULL},
   {NULL, NULL}
 };
 

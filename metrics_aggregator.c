@@ -30,6 +30,29 @@ static int final_result(CManager cm, void *vevent, void *client_data, attr_list 
   return 0;
 }
 
+static int compute_own_metric(CManager cm, void *vevent, void *client_data, attr_list attrs)
+{
+
+  int rank;
+
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+  static int count = 0;
+  ++count;
+  if(count == DEGREE) {
+    EVsource source = EVcreate_submit_handle(current_state.conn_mgr, current_state.multi_stone, metrics_format_list);
+    metrics_t data;
+    data.integer_field = rank;
+    data.degree = DEGREE;
+
+    EVsubmit(source, &data, NULL);
+   
+    count = 0;
+  }
+
+  return 0;
+}
+
 static int is_leaf()
 {
   int rank;
@@ -84,9 +107,14 @@ void compute_evpath_addr(char *addr)
   CMlisten(current_state.conn_mgr);
 
   current_state.multi_stone = EValloc_stone(current_state.conn_mgr);
+  current_state.split_stone = EValloc_stone(current_state.conn_mgr);
+
   string_list_addr = attr_list_to_string(CMget_contact_list(current_state.conn_mgr));
   
-  sprintf(addr, "%d:%s", current_state.multi_stone, string_list_addr);
+  sprintf(addr, "%d:%s", current_state.split_stone, string_list_addr);
+
+  memcpy(current_state.own_addr, addr, ADDRESS_SIZE);
+  // printf("My addres (proc %d) is: %s\n", rank, addr);
 }
 
 void initialize_monitoring()
@@ -129,6 +157,7 @@ void create_stones()
     CManager cm = current_state.conn_mgr;
 
     current_state.bridge_stone = EValloc_stone(cm);
+
     EVstone output = current_state.bridge_stone;
 
     char string_list[ADDRESS_SIZE];
@@ -154,6 +183,25 @@ void create_stones()
   //create the multistone
 
   if(!is_leaf()) {
+      CManager cm = current_state.conn_mgr;
+      EVstone terminal_stone;
+
+      if(rank != 0) {
+        current_state.terminal_stone = EValloc_stone(cm);
+        terminal_stone = current_state.terminal_stone;
+      } else {
+        current_state.agreg_terminal_stone = EValloc_stone(cm);
+        terminal_stone = current_state.agreg_terminal_stone;
+      }
+
+      EVassoc_terminal_action(current_state.conn_mgr, terminal_stone,
+                            metrics_format_list, compute_own_metric, NULL);
+
+      EVaction split_action = EVassoc_split_action(cm, current_state.split_stone, NULL);
+      
+      EVaction_add_split_target(cm, current_state.split_stone, split_action, terminal_stone);
+      EVaction_add_split_target(cm, current_state.split_stone, split_action, current_state.multi_stone);
+
     static char *multi_func = "{\n\
       int found = 0;\n\
       metrics_t *a;\n\
@@ -163,15 +211,15 @@ void create_stones()
           degree = a->degree;\n\
       }\n\
       \n\
-      if (EVcount_metrics_t() == degree) {\n\
+      if (EVcount_metrics_t() == degree + 1) {\n\
           int i;\n\
           metrics_t c;\n\
-          for(i = 0; i < degree; i++) {\n\
+          for(i = 0; i < degree + 1; i++) {\n\
             a = EVdata_metrics_t(i);\n\
             c.integer_field += a->integer_field;\n\
             /* submit the new, combined event */\n\
           }\n\
-          for(i = 0; i < degree; i++) {\n\
+          for(i = 0; i < degree + 1; i++) {\n\
             /* discard the used events */\n\
             EVdiscard_metrics_t(0);\n\
           }\n\
@@ -201,6 +249,6 @@ void start_communication()
 
   while (1) {
     EVsubmit(source, &data, NULL);
-    sleep(2);
+    sleep(1);
   }
 }
