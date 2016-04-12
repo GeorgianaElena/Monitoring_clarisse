@@ -4,55 +4,122 @@
 #include "available_metrics.h"
 #include "storage.h"
 #include "stdio.h"
+#include "stdbool.h"
 
 static FILE *metrics_file;
 
+static char **desired_metrics = NULL;
+
+static long total_metrics = 0;
+
 typedef struct _aggregators_t aggregators_t;
+
 
 void initialize_metrics_crawler()
 {
-	init();
+    init();
 }
 
-void initialize_metrics_crawler_number(long *nr)
+int initialize_metrics_crawler_number_from_file(long *nr)
 {
-    metrics_file = fopen ("file.txt", "r");
-  	
-  	fscanf (metrics_file, "%ld", nr);
+    int synced = false;
 
-    fclose(metrics_file);  	  
+    metrics_file = fopen ("file.txt", "r");
+    
+    fscanf(metrics_file, "%ld", nr);
+
+    fclose(metrics_file);
+
+    if(total_metrics && *nr != total_metrics) {
+        synced = true;
+    }
+
+    total_metrics = *nr;
+
+    if(desired_metrics) {
+        for(int i = 0; i < total_metrics; ++i) {
+            free(desired_metrics[i]);
+            desired_metrics[i] = NULL;
+        }
+
+        free(desired_metrics);
+
+        desired_metrics = NULL;
+    }
+
+    desired_metrics = (char **) calloc (total_metrics, sizeof(char *));
+
+    return synced;
 }
 
-void initialize_metrics_crawler_results(aggregators_t *result)
+void initialize_metrics_crawler_number_from_memory(long *nr)
+{
+    *nr = total_metrics;
+}
+
+void metrics_crawler_results_memory(aggregators_t *result)
+{
+    for(int i = 0; i < total_metrics; ++i) {
+        double (*func)();
+
+        func = get_value(desired_metrics[i]);
+        
+        if(func == NULL) {
+            return;
+        }
+
+        long metric_result = func();
+
+        result[i].min = metric_result;
+        result[i].max = metric_result;
+        result[i].sum = metric_result;
+    }
+
+}
+
+int metrics_crawler_results_file(aggregators_t *result)
 {
     metrics_file = fopen("file.txt", "r");
-    char *line = NULL;
-    size_t len = 0;
-    ssize_t read;
 
-	if (metrics_file == NULL) {
-	   exit(EXIT_FAILURE);
-	}
+    char line[MAX_LENGTH_ALIAS];
+    long metric_number = 0;
+    int synced = false;
 
-	long metric_number = 0;
+    if (metrics_file == NULL) {
+       exit(EXIT_FAILURE);
+    }
 
-	/* skip first line */
-	getline(&line, &len, metrics_file);
+    if(fscanf(metrics_file, "%s\n", line) == -1) {
+        fprintf(stderr, "%s\n", "Error while reading metrics file");
+    }
 
-	while ((read = getline(&line, &len, metrics_file)) != -1) {
-		double (*func)();
-	    func = get_value(line);
+    while (fscanf(metrics_file, "%s\n", line) != -1) {
+        if(desired_metrics[metric_number] && strcmp(desired_metrics[metric_number], line)) {
+            synced = true;
+        }        
 
-	    long metric_result = func();
+        desired_metrics[metric_number] = strdup(line);
 
-	    result[metric_number].min = metric_result;
-	    result[metric_number].max = metric_result;
-	    result[metric_number].sum = metric_result;
+        double (*func)();
 
-	    ++metric_result;
-	}
+        func = get_value(line);
+        
+        if(func == NULL) {
+            fprintf(stderr, "%s\n", "Function requested doesn't exist");
+        }
 
-	fclose(metrics_file);
+        long metric_result = func();
+
+        result[metric_number].min = metric_result;
+        result[metric_number].max = metric_result;
+        result[metric_number].sum = metric_result;
+
+        ++metric_number;
+    }
+
+    fclose(metrics_file);
+
+    return synced;
 }
 
 #endif

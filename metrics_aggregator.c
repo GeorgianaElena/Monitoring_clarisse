@@ -2,6 +2,7 @@
 #include "metrics_crawler.h"
 
 static node_state_t current_state;
+// static int timestamp = 0;
 
 int main(int argc, char **argv)
 {
@@ -33,13 +34,15 @@ static int final_result(CManager cm, void *vevent, void *client_data, attr_list 
 
 static int compute_own_metrics(CManager cm, void *vevent, void *client_data, attr_list attrs)
 {
+  metrics_t_ptr event = vevent;
 
   int rank;
-
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
   static int count = 0;
+  
   ++count;
+
   if(count == DEGREE) {
     EVsource source = EVcreate_submit_handle(current_state.conn_mgr, current_state.multi_stone,
                                              metrics_format_list);
@@ -48,11 +51,24 @@ static int compute_own_metrics(CManager cm, void *vevent, void *client_data, att
 
     metrics_t data;
     data.degree = DEGREE;
+
+    data.update_file = event->update_file;
+
+    // printf("update ? %d\n", event->update_file);
     
-    initialize_metrics_crawler_number(&data.metrics_nr);
+    if(event->update_file) {
+      initialize_metrics_crawler_number_from_file(&data.metrics_nr);
+    } else {
+      initialize_metrics_crawler_number_from_memory(&data.metrics_nr);
+    }
 
     data.gather_info = malloc(data.metrics_nr * sizeof(aggregators_t));
-    initialize_metrics_crawler_results(data.gather_info);
+
+    if(event->update_file) {
+      metrics_crawler_results_file(data.gather_info);
+    } else {
+      metrics_crawler_results_memory(data.gather_info);
+    }
 
     EVsubmit(source, &data, NULL);
    
@@ -223,6 +239,7 @@ void create_stones()
           c.gather_info[0].max = a->gather_info[0].max;\n\
           c.gather_info[0].sum = a->gather_info[0].sum;\n\
           c.degree = a->degree;\n\
+          c.update_file = a->update_file;\n\
           \n\
           while(EVcount_full()) {\n\
             EVdiscard_metrics_t(0);\n\
@@ -263,14 +280,17 @@ void start_communication()
   
   /* populate the storage data stucture with the metrics known by the program so far */
   initialize_metrics_crawler();
-  
+
   metrics_t data;
   data.degree = DEGREE;
   
-  initialize_metrics_crawler_number(&data.metrics_nr);
+  data.update_file = true;
+
+  initialize_metrics_crawler_number_from_file(&data.metrics_nr);
 
   data.gather_info = malloc(data.metrics_nr * sizeof(aggregators_t));
-  initialize_metrics_crawler_results(data.gather_info);
+
+  metrics_crawler_results_file(data.gather_info);
 
   EVsubmit(source, &data, NULL);
 
@@ -278,10 +298,10 @@ void start_communication()
   while (1) {
     sleep(1);
 
-    initialize_metrics_crawler_number(&data.metrics_nr);
+    data.update_file = initialize_metrics_crawler_number_from_file(&data.metrics_nr);
 
     data.gather_info = malloc(data.metrics_nr * sizeof(aggregators_t));
-    initialize_metrics_crawler_results(data.gather_info);
+    data.update_file |= metrics_crawler_results_file(data.gather_info);
 
     EVsubmit(source, &data, NULL);
   }

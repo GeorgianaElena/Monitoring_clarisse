@@ -7,22 +7,25 @@
 
 typedef struct _callback_t {
     double (*func)();
-	char alias[MAX_LENGTH_ALIAS];
+    char alias[MAX_LENGTH_ALIAS];
 } callback_t;
 
 static double return_rank()
 {
-	int rank;
-	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-	return rank;
+    return rank;
 }
 
 static int available_metrics_no = 1;
 
 static const callback_t callbacks[] = 
 {
-	{return_rank, "rank number"}
+    {return_rank, "rank_number"}
 };
 
 #endif
+
+/* 127 fara probleme - 1 sec 
+   63 - 0.5 sec */
