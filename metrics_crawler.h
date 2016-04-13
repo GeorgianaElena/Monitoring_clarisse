@@ -59,16 +59,21 @@ void initialize_metrics_crawler_number_from_memory(long *nr)
 
 void metrics_crawler_results_memory(aggregators_t *result)
 {
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
     for(int i = 0; i < total_metrics; ++i) {
         double (*func)();
 
         func = get_value(desired_metrics[i]);
-        
-        if(func == NULL) {
-            return;
-        }
 
-        long metric_result = func();
+        double metric_result = 0;
+        
+        if(!func && !rank) {
+            fprintf(stderr, "Metric \"%s\" not supported\n", desired_metrics[i]);
+        } else if(func){
+            metric_result = func();
+        }
 
         result[i].min = metric_result;
         result[i].max = metric_result;
@@ -79,6 +84,9 @@ void metrics_crawler_results_memory(aggregators_t *result)
 
 int metrics_crawler_results_file(aggregators_t *result)
 {
+    int rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
     metrics_file = fopen("file.txt", "r");
 
     char line[MAX_LENGTH_ALIAS];
@@ -103,18 +111,22 @@ int metrics_crawler_results_file(aggregators_t *result)
         double (*func)();
 
         func = get_value(line);
+
+        double metric_result = 0;
         
-        if(func == NULL) {
-            fprintf(stderr, "%s\n", "Function requested doesn't exist");
+        if(!func && !rank) {
+            fprintf(stderr, "Metric \"%s\" not supported\n", line);
+        } else if(func) {
+            metric_result = func();
         }
 
-        long metric_result = func();
 
         result[metric_number].min = metric_result;
         result[metric_number].max = metric_result;
         result[metric_number].sum = metric_result;
 
         ++metric_number;
+
     }
 
     fclose(metrics_file);

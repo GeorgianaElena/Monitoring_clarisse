@@ -27,8 +27,11 @@ int main(int argc, char **argv)
 static int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
 {
   metrics_t_ptr event = vevent;
-  printf("Min = %f\tMax = %f\tAverage = %f\n", event->gather_info[0].min,
-          event->gather_info[0].max, event->gather_info[0].sum);
+  for(int i = 0; i < event->metrics_nr; ++i) {
+    printf("Min = %f\tMax = %f\tAverage = %f\n", event->gather_info[i].min,
+          event->gather_info[i].max, event->gather_info[i].sum);
+  }
+
   return 0;
 }
 
@@ -171,7 +174,7 @@ void create_stones()
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
   if(rank != 0) {
-    //create the bridge stone
+    //create bridge stone
 
     if(is_leaf()) {
       current_state.conn_mgr = CManager_create();
@@ -235,9 +238,11 @@ void create_stones()
           \n\
           metrics_t c;\n\
           c.metrics_nr = a->metrics_nr;\n\
-          c.gather_info[0].min = a->gather_info[0].min;\n\
-          c.gather_info[0].max = a->gather_info[0].max;\n\
-          c.gather_info[0].sum = a->gather_info[0].sum;\n\
+          for(i = 0; i < a->metrics_nr; i++) {\n\
+            c.gather_info[i].min = a->gather_info[i].min;\n\
+            c.gather_info[i].max = a->gather_info[i].max;\n\
+            c.gather_info[i].sum = a->gather_info[i].sum;\n\
+          }\n\
           c.degree = a->degree;\n\
           c.update_file = a->update_file;\n\
           \n\
@@ -245,16 +250,19 @@ void create_stones()
             EVdiscard_metrics_t(0);\n\
             if(EVcount_metrics_t() > 0) {\n\
               a = EVdata_metrics_t(0);\n\
-              c.gather_info[0].sum += a->gather_info[0].sum;\n\
-              if(c.gather_info[0].min > a->gather_info[0].min) {\n\
-                c.gather_info[0].min = a->gather_info[0].min;\n\
-              }\n\
-              \n\
-              if(c.gather_info[0].max < a->gather_info[0].max) {\n\
-                c.gather_info[0].max = a->gather_info[0].max;\n\
+              for(i = 0; i < a->metrics_nr; i++) {\n\
+                c.gather_info[i].sum += a->gather_info[i].sum;\n\
+                if(c.gather_info[i].min > a->gather_info[i].min) {\n\
+                  c.gather_info[i].min = a->gather_info[i].min;\n\
+                }\n\
+                \n\
+                if(c.gather_info[i].max < a->gather_info[i].max) {\n\
+                  c.gather_info[i].max = a->gather_info[i].max;\n\
+                }\n\
               }\n\
             }\n\
           }\n\
+          // }\n\
           /* submit the new, combined event */\n\
           EVsubmit(0, c);\n\
       }\n\
