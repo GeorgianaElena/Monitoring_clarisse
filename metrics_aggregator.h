@@ -40,6 +40,7 @@ typedef struct _metrics_t{
     aggregators_t *gather_info;
     int degree;
     int update_file;
+    long timestamp;
 } metrics_t, *metrics_t_ptr;
 
 static FMField aggregators_field_list[] = 
@@ -56,6 +57,7 @@ static FMField metrics_field_list[] =
     {"gather_info", "aggregators_t[metrics_nr]", sizeof(aggregators_t), FMOffset(metrics_t_ptr, gather_info)},
     {"degree", "integer", sizeof(int), FMOffset(metrics_t_ptr, degree)},
     {"update_file", "integer", sizeof(int), FMOffset(metrics_t_ptr, update_file)},
+    {"timestamp", "integer", sizeof(long), FMOffset(metrics_t_ptr, timestamp)},
     {NULL, NULL}
 };
 

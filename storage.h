@@ -47,10 +47,7 @@ static func_ptr get_value(char *key)
 
     HASH_FIND_STR(callbacks_storage, key, pair);
 
-    if (!pair) {
-        // fprintf(stderr, "Metric doesn't exit");
-        // fprintf(stderr, "Metric %s doesn't exit", key);
-        
+    if (!pair) {  
         return NULL;
     }
 

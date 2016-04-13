@@ -2,7 +2,6 @@
 #include "metrics_crawler.h"
 
 static node_state_t current_state;
-// static int timestamp = 0;
 
 int main(int argc, char **argv)
 {
@@ -53,11 +52,12 @@ static int compute_own_metrics(CManager cm, void *vevent, void *client_data, att
     initialize_metrics_crawler();
 
     metrics_t data;
+
     data.degree = DEGREE;
 
     data.update_file = event->update_file;
 
-    // printf("update ? %d\n", event->update_file);
+    data.timestamp = event->timestamp;
     
     if(event->update_file) {
       initialize_metrics_crawler_number_from_file(&data.metrics_nr);
@@ -225,31 +225,45 @@ void create_stones()
                                 current_state.multi_stone);
 
     static char *multi_func = "{\n\
-      int found = 0;\n\
+      int count_timestamps = 0;\n\
+      static int counter = 0;\n\
+      int event_index = 0;\n\
       metrics_t *a;\n\
       int degree = -1;\n\
       if (EVcount_metrics_t()) {\n\
-          a = EVdata_metrics_t(0);\n\
+          a = EVdata_metrics_t(event_index);\n\
           degree = a->degree;\n\
       }\n\
       \n\
-      if (EVcount_metrics_t() == degree + 1) {\n\
-          int i;\n\
-          \n\
-          metrics_t c;\n\
-          c.metrics_nr = a->metrics_nr;\n\
-          for(i = 0; i < a->metrics_nr; i++) {\n\
-            c.gather_info[i].min = a->gather_info[i].min;\n\
-            c.gather_info[i].max = a->gather_info[i].max;\n\
-            c.gather_info[i].sum = a->gather_info[i].sum;\n\
+      if (EVcount_metrics_t() >= degree + 1) {\n\
+        int i;\n\
+        \n\
+        metrics_t c;\n\
+        c.metrics_nr = a->metrics_nr;\n\
+        \n\
+        for(i = 0; i < EVcount_metrics_t(); i++) {\n\
+          metrics_t *b = EVdata_metrics_t(i);\n\
+          if(b->timestamp == counter) {\n\
+            ++count_timestamps;\n\
           }\n\
-          c.degree = a->degree;\n\
-          c.update_file = a->update_file;\n\
+        }\n\
+        \n\
+        if(count_timestamps == degree + 1) {\n\
+          if(a->timestamp == counter) {\n\
+            for(i = 0; i < a->metrics_nr; i++) {\n\
+              c.gather_info[i].min = a->gather_info[i].min;\n\
+              c.gather_info[i].max = a->gather_info[i].max;\n\
+              c.gather_info[i].sum = a->gather_info[i].sum;\n\
+            }\n\
+            c.degree = a->degree;\n\
+            c.update_file = a->update_file;\n\
+            c.timestamp = counter;\n\
+          }\n\
           \n\
-          while(EVcount_full()) {\n\
-            EVdiscard_metrics_t(0);\n\
-            if(EVcount_metrics_t() > 0) {\n\
-              a = EVdata_metrics_t(0);\n\
+          event_index++;\n\
+          while(event_index < EVcount_metrics_t()) {\n\
+            a = EVdata_metrics_t(event_index);\n\
+            if(a->timestamp == counter) {\n\
               for(i = 0; i < a->metrics_nr; i++) {\n\
                 c.gather_info[i].sum += a->gather_info[i].sum;\n\
                 if(c.gather_info[i].min > a->gather_info[i].min) {\n\
@@ -261,10 +275,23 @@ void create_stones()
                 }\n\
               }\n\
             }\n\
+            event_index++;\n\
           }\n\
-          // }\n\
+          \n\
+          //discarding events with the desired timestams\n\
+          int i = 0;\n\
+          while(EVcount_full()) {\n\
+            metrics_t *b = EVdata_metrics_t(i);\n\
+            if(b->timestamp == counter) {\n\
+              EVdiscard_metrics_t(i);\n\
+            } else {\n\
+              i++;\n\
+            }\n\
+          }\n\
           /* submit the new, combined event */\n\
+          ++counter;\n\
           EVsubmit(0, c);\n\
+        }\n\
       }\n\
     }\0\0";  
 
@@ -289,10 +316,14 @@ void start_communication()
   /* populate the storage data stucture with the metrics known by the program so far */
   initialize_metrics_crawler();
 
+  int counter = 0;
   metrics_t data;
+
   data.degree = DEGREE;
   
   data.update_file = true;
+
+  data.timestamp = counter;
 
   initialize_metrics_crawler_number_from_file(&data.metrics_nr);
 
@@ -304,11 +335,16 @@ void start_communication()
 
   /* send data periodically*/
   while (1) {
+    ++counter;
+
     sleep(1);
+
+    data.timestamp = counter;
 
     data.update_file = initialize_metrics_crawler_number_from_file(&data.metrics_nr);
 
     data.gather_info = malloc(data.metrics_nr * sizeof(aggregators_t));
+
     data.update_file |= metrics_crawler_results_file(data.gather_info);
 
     EVsubmit(source, &data, NULL);
