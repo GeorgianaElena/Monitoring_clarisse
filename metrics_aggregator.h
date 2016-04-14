@@ -14,6 +14,7 @@
 
 #define DEGREE 2
 #define ADDRESS_SIZE 2048
+#define MAX_TIMESTAMPS 100
 
 typedef struct _node_state_t{
     char parent_addr[ADDRESS_SIZE];
@@ -24,8 +25,9 @@ typedef struct _node_state_t{
     EVstone split_stone;
     EVstone terminal_stone;
 
-    /* valid only for root */
+    /* Only valid for root */
     EVstone agreg_terminal_stone;
+
     CManager conn_mgr;
 } node_state_t;
 
@@ -81,7 +83,6 @@ void initialize_monitoring();
 void create_stones();
 void start_listening();
 void start_communication();
-
 void compute_evpath_addr(char *addr);
 
 #endif

@@ -12,6 +12,8 @@ static char **desired_metrics = NULL;
 
 static long total_metrics = 0;
 
+static long old_nr_of_metrics = 0;
+
 typedef struct _aggregators_t aggregators_t;
 
 
@@ -20,36 +22,29 @@ void initialize_metrics_crawler()
     init();
 }
 
-int initialize_metrics_crawler_number_from_file(long *nr)
+void initialize_metrics_crawler_number_from_file(long *nr)
 {
-    int synced = false;
-
     metrics_file = fopen ("file.txt", "r");
     
     fscanf(metrics_file, "%ld", nr);
 
     fclose(metrics_file);
 
-    if(total_metrics && *nr != total_metrics) {
-        synced = true;
-    }
+    old_nr_of_metrics = total_metrics;
 
     total_metrics = *nr;
 
     if(desired_metrics) {
-        for(int i = 0; i < total_metrics; ++i) {
+        for(int i = 0; i < old_nr_of_metrics; ++i) {
             free(desired_metrics[i]);
             desired_metrics[i] = NULL;
         }
 
         free(desired_metrics);
-
         desired_metrics = NULL;
     }
 
     desired_metrics = (char **) calloc (total_metrics, sizeof(char *));
-
-    return synced;
 }
 
 void initialize_metrics_crawler_number_from_memory(long *nr)
@@ -90,26 +85,31 @@ int metrics_crawler_results_file(aggregators_t *result)
     metrics_file = fopen("file.txt", "r");
 
     char line[MAX_LENGTH_ALIAS];
+
     long metric_number = 0;
-    int synced = false;
+
+    long number = 0;
+
+    int needs_sync = false;
 
     if (metrics_file == NULL) {
        exit(EXIT_FAILURE);
     }
 
-    if(fscanf(metrics_file, "%s\n", line) == -1) {
+    if(fscanf(metrics_file, "%ld\n", &number) == -1) {
         fprintf(stderr, "%s\n", "Error while reading metrics file");
     }
 
     while (fscanf(metrics_file, "%s\n", line) != -1) {
-        if(desired_metrics[metric_number] && strcmp(desired_metrics[metric_number], line)) {
-            synced = true;
+        if(number != old_nr_of_metrics ||
+          (desired_metrics[metric_number] && strcmp(desired_metrics[metric_number], line))) {
+            needs_sync = true;
         }        
 
         desired_metrics[metric_number] = strdup(line);
 
         double (*func)();
-
+        
         func = get_value(line);
 
         double metric_result = 0;
@@ -126,12 +126,11 @@ int metrics_crawler_results_file(aggregators_t *result)
         result[metric_number].sum = metric_result;
 
         ++metric_number;
-
     }
 
     fclose(metrics_file);
 
-    return synced;
+    return needs_sync;
 }
 
 #endif

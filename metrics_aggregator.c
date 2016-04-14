@@ -12,6 +12,8 @@ int main(int argc, char **argv)
   MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
   initialize_monitoring();
+
+  /* Wait for all the processes to finish init phase*/
   MPI_Barrier(MPI_COMM_WORLD);
 
   create_stones();
@@ -26,9 +28,10 @@ int main(int argc, char **argv)
 static int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
 {
   metrics_t_ptr event = vevent;
+
   for(int i = 0; i < event->metrics_nr; ++i) {
     printf("Min = %f\tMax = %f\tAverage = %f\n", event->gather_info[i].min,
-          event->gather_info[i].max, event->gather_info[i].sum);
+            event->gather_info[i].max, event->gather_info[i].sum);
   }
 
   return 0;
@@ -36,16 +39,18 @@ static int final_result(CManager cm, void *vevent, void *client_data, attr_list 
 
 static int compute_own_metrics(CManager cm, void *vevent, void *client_data, attr_list attrs)
 {
-  metrics_t_ptr event = vevent;
-
   int rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-  static int count = 0;
+  metrics_t_ptr event = vevent;
   
-  ++count;
+  static int count_timestamps[MAX_TIMESTAMPS] = {0};
 
-  if(count == DEGREE) {
+  static int counter = 0;
+  
+  count_timestamps[event->timestamp]++;
+
+  if(count_timestamps[counter] == DEGREE) {
     EVsource source = EVcreate_submit_handle(current_state.conn_mgr, current_state.multi_stone,
                                              metrics_format_list);
     
@@ -57,7 +62,8 @@ static int compute_own_metrics(CManager cm, void *vevent, void *client_data, att
 
     data.update_file = event->update_file;
 
-    data.timestamp = event->timestamp;
+    data.timestamp = counter;
+
     
     if(event->update_file) {
       initialize_metrics_crawler_number_from_file(&data.metrics_nr);
@@ -73,9 +79,11 @@ static int compute_own_metrics(CManager cm, void *vevent, void *client_data, att
       metrics_crawler_results_memory(data.gather_info);
     }
 
+    count_timestamps[counter] = 0;
+
+    counter = (counter + 1) % MAX_TIMESTAMPS;
+
     EVsubmit(source, &data, NULL);
-   
-    count = 0;
   }
 
   return 0;
@@ -106,17 +114,16 @@ static int get_parent()
 void recv_addr_from_parent(char *addr)
 {
   int rank;
-
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
   MPI_Recv(addr, ADDRESS_SIZE, MPI_CHAR, get_parent(), 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+  
   printf("Process %d received from parent %s\n", rank, addr);
 }
 
 void send_addr_to_children(char *addr)
 {
   int rank, tag = 0;
-
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
   for(int i = 1; i <= DEGREE; ++i) {
@@ -127,14 +134,15 @@ void send_addr_to_children(char *addr)
 void compute_evpath_addr(char *addr)
 {
   int rank;
-
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
   char *string_list_addr;
+
   current_state.conn_mgr = CManager_create();
   CMlisten(current_state.conn_mgr);
 
   current_state.multi_stone = EValloc_stone(current_state.conn_mgr);
+
   current_state.split_stone = EValloc_stone(current_state.conn_mgr);
 
   string_list_addr = attr_list_to_string(CMget_contact_list(current_state.conn_mgr));
@@ -147,19 +155,18 @@ void compute_evpath_addr(char *addr)
 void initialize_monitoring()
 {
   int rank;
-
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
+  /* Receive evpath address from parent node */  
   if(rank != 0) {
-    /* Receive evpath address from parent node */
     char addr[ADDRESS_SIZE];
     recv_addr_from_parent(addr);
 
     memcpy(current_state.parent_addr, addr, ADDRESS_SIZE);
   }
 
+  /* Compute evpath address and send to children */  
   if(!is_leaf()) {
-    /* Compute evpath address and send to children */
     char myaddr[ADDRESS_SIZE];
     compute_evpath_addr(myaddr);
 
@@ -170,24 +177,23 @@ void initialize_monitoring()
 void create_stones()
 {
   int rank;
-
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
   if(rank != 0) {
-    //create bridge stone
-
+    
     if(is_leaf()) {
       current_state.conn_mgr = CManager_create();
+
       CMlisten(current_state.conn_mgr);
     }
 
     CManager cm = current_state.conn_mgr;
 
     current_state.bridge_stone = EValloc_stone(cm);
-
     EVstone output = current_state.bridge_stone;
 
     char string_list[ADDRESS_SIZE];
+    
     EVstone remote_stone;
     
     if (sscanf(current_state.parent_addr, "%d:%s", &remote_stone, &string_list[0]) != 2) {
@@ -198,21 +204,27 @@ void create_stones()
     attr_list contact_list = attr_list_from_string(string_list);
 
     EVassoc_bridge_action(cm, output, contact_list, remote_stone);
+
     EVstone_set_output(cm, current_state.multi_stone, 0, output);
+
   } else {
     current_state.agreg_terminal_stone = EValloc_stone(current_state.conn_mgr);
+
     EVassoc_terminal_action(current_state.conn_mgr, current_state.agreg_terminal_stone,
                             metrics_format_list, final_result, NULL);
+
     EVstone_set_output(current_state.conn_mgr, current_state.multi_stone, 0,
                        current_state.agreg_terminal_stone);
   }
 
-  /* create the multistone */
+  /* Create the multistone */
   if(!is_leaf()) {
       CManager cm = current_state.conn_mgr;
+      
       EVstone terminal_stone;
 
       current_state.terminal_stone = EValloc_stone(cm);
+      
       terminal_stone = current_state.terminal_stone;
       
       EVassoc_terminal_action(current_state.conn_mgr, terminal_stone,
@@ -221,18 +233,31 @@ void create_stones()
       EVaction split_action = EVassoc_split_action(cm, current_state.split_stone, NULL);
       
       EVaction_add_split_target(cm, current_state.split_stone, split_action, terminal_stone);
+
       EVaction_add_split_target(cm, current_state.split_stone, split_action,
                                 current_state.multi_stone);
 
     static char *multi_func = "{\n\
       int count_timestamps = 0;\n\
-      static int counter = 0;\n\
       int event_index = 0;\n\
-      metrics_t *a;\n\
       int degree = -1;\n\
+      int first_found_index = 0;\n\
+      \n\
+      static int counter = 0;\n\
+      \n\
+      metrics_t *a;\n\
+      \n\
+      /* Find firt metric with the desired timestamp */\n\
       if (EVcount_metrics_t()) {\n\
-          a = EVdata_metrics_t(event_index);\n\
-          degree = a->degree;\n\
+        int i;\n\
+        for(i = 0; i < EVcount_metrics_t(); i++) {\n\
+          a = EVdata_metrics_t(i);\n\
+          if(a->timestamp == counter) {\n\
+            degree = a->degree;\n\
+            first_found_index = i;\n\
+            break;\n\
+          }\n\
+        }\n\
       }\n\
       \n\
       if (EVcount_metrics_t() >= degree + 1) {\n\
@@ -241,6 +266,7 @@ void create_stones()
         metrics_t c;\n\
         c.metrics_nr = a->metrics_nr;\n\
         \n\
+        /* Find if there are enough events in the queue with the desired timestamp */\n\
         for(i = 0; i < EVcount_metrics_t(); i++) {\n\
           metrics_t *b = EVdata_metrics_t(i);\n\
           if(b->timestamp == counter) {\n\
@@ -248,6 +274,7 @@ void create_stones()
           }\n\
         }\n\
         \n\
+        /*If there are enough events => aggregate them */
         if(count_timestamps == degree + 1) {\n\
           if(a->timestamp == counter) {\n\
             for(i = 0; i < a->metrics_nr; i++) {\n\
@@ -260,27 +287,28 @@ void create_stones()
             c.timestamp = counter;\n\
           }\n\
           \n\
-          event_index++;\n\
           while(event_index < EVcount_metrics_t()) {\n\
-            a = EVdata_metrics_t(event_index);\n\
-            if(a->timestamp == counter) {\n\
-              for(i = 0; i < a->metrics_nr; i++) {\n\
-                c.gather_info[i].sum += a->gather_info[i].sum;\n\
-                if(c.gather_info[i].min > a->gather_info[i].min) {\n\
-                  c.gather_info[i].min = a->gather_info[i].min;\n\
-                }\n\
-                \n\
-                if(c.gather_info[i].max < a->gather_info[i].max) {\n\
-                  c.gather_info[i].max = a->gather_info[i].max;\n\
+            if(event_index != first_found_index){\n\
+              a = EVdata_metrics_t(event_index);\n\
+              if(a->timestamp == counter) {\n\
+                for(i = 0; i < a->metrics_nr; i++) {\n\
+                  c.gather_info[i].sum += a->gather_info[i].sum;\n\
+                  if(c.gather_info[i].min > a->gather_info[i].min) {\n\
+                    c.gather_info[i].min = a->gather_info[i].min;\n\
+                  }\n\
+                  \n\
+                  if(c.gather_info[i].max < a->gather_info[i].max) {\n\
+                    c.gather_info[i].max = a->gather_info[i].max;\n\
+                  }\n\
                 }\n\
               }\n\
             }\n\
             event_index++;\n\
           }\n\
           \n\
-          //discarding events with the desired timestams\n\
+          /* Discard events already aggregated */\n\
           int i = 0;\n\
-          while(EVcount_full()) {\n\
+          while(i < EVcount_metrics_t()) {\n\
             metrics_t *b = EVdata_metrics_t(i);\n\
             if(b->timestamp == counter) {\n\
               EVdiscard_metrics_t(i);\n\
@@ -289,7 +317,7 @@ void create_stones()
             }\n\
           }\n\
           /* submit the new, combined event */\n\
-          ++counter;\n\
+          counter = (counter + 1)%100;\n\
           EVsubmit(0, c);\n\
         }\n\
       }\n\
@@ -313,10 +341,11 @@ void start_communication()
   EVsource source = EVcreate_submit_handle(current_state.conn_mgr, current_state.bridge_stone,
                                            metrics_format_list);
   
-  /* populate the storage data stucture with the metrics known by the program so far */
+  /* Populate the storage data stucture with the metrics known by the program so far */
   initialize_metrics_crawler();
 
   int counter = 0;
+
   metrics_t data;
 
   data.degree = DEGREE;
@@ -333,19 +362,19 @@ void start_communication()
 
   EVsubmit(source, &data, NULL);
 
-  /* send data periodically*/
+  /* Send data periodically with different timestamps */
   while (1) {
-    ++counter;
+    counter = (counter + 1) % MAX_TIMESTAMPS;
 
     sleep(1);
 
     data.timestamp = counter;
 
-    data.update_file = initialize_metrics_crawler_number_from_file(&data.metrics_nr);
+    initialize_metrics_crawler_number_from_file(&data.metrics_nr);
 
     data.gather_info = malloc(data.metrics_nr * sizeof(aggregators_t));
 
-    data.update_file |= metrics_crawler_results_file(data.gather_info);
+    data.update_file = metrics_crawler_results_file(data.gather_info);
 
     EVsubmit(source, &data, NULL);
   }
