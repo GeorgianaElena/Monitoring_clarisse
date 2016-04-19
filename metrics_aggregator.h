@@ -43,8 +43,10 @@ typedef struct _aggregators_t{
 typedef struct _metrics_t{
   long metrics_nr;
   aggregators_t *gather_info;
-  int degree;
+  int max_degree;
   int update_file;
+  int parent_rank;
+  int nprocs;
   long timestamp;
 } metrics_t, *metrics_t_ptr;
 
@@ -60,8 +62,10 @@ static FMField metrics_field_list[] =
 {
   {"metrics_nr", "integer", sizeof(long), FMOffset(metrics_t_ptr, metrics_nr)},
   {"gather_info", "aggregators_t[metrics_nr]", sizeof(aggregators_t), FMOffset(metrics_t_ptr, gather_info)},
-  {"degree", "integer", sizeof(int), FMOffset(metrics_t_ptr, degree)},
+  {"max_degree", "integer", sizeof(int), FMOffset(metrics_t_ptr, max_degree)},
   {"update_file", "integer", sizeof(int), FMOffset(metrics_t_ptr, update_file)},
+  {"parent_rank", "integer", sizeof(int), FMOffset(metrics_t_ptr, parent_rank)},
+  {"nprocs", "integer", sizeof(int), FMOffset(metrics_t_ptr, nprocs)},
   {"timestamp", "integer", sizeof(long), FMOffset(metrics_t_ptr, timestamp)},
   {NULL, NULL}
 };
@@ -79,6 +83,7 @@ static int final_result(CManager cm, void *vevent, void *client_data, attr_list 
 static int compute_own_metrics(CManager cm, void *vevent, void *client_data, attr_list attrs);
 static int is_leaf();
 static int get_parent();
+static int get_degree_node();
 
 void recv_addr_from_parent(char *addr);
 void send_addr_to_children(char *addr);

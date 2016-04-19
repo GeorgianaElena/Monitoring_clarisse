@@ -5,7 +5,6 @@ static node_state_t current_state;
 
 int main(int argc, char **argv)
 {
-
   int rank, nprocs, provided;
 
   MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided);
@@ -57,7 +56,7 @@ int main(int argc, char **argv)
 
   MPI_Finalize();
 
-  return 0; 
+  return 0;
 }
 
 /* Final aggregated system state */
@@ -76,33 +75,37 @@ static int final_result(CManager cm, void *vevent, void *client_data, attr_list 
 /* Compute metrics for current process */
 static int compute_own_metrics(CManager cm, void *vevent, void *client_data, attr_list attrs)
 {
-  int rank;
+  int rank, nprocs;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
   metrics_t_ptr event = vevent;
-  
+
   static int count_timestamps[MAX_TIMESTAMPS] = { 0 };
 
   static int counter = 0;
-  
+
   count_timestamps[event->timestamp]++;
 
-  if(count_timestamps[counter] == DEGREE) {
+  if(count_timestamps[counter] == get_degree_node()) {
 
     EVsource source = EVcreate_submit_handle(current_state.conn_mgr, current_state.multi_stone,
                                              metrics_format_list);
-    
+
     initialize_metrics_crawler();
 
     metrics_t data;
 
-    data.degree = DEGREE;
+    data.max_degree = DEGREE;
 
     data.update_file = event->update_file;
 
     data.timestamp = counter;
 
-    
+    data.parent_rank = get_parent();
+
+    data.nprocs = nprocs;
+
     if(event->update_file) {
       initialize_metrics_crawler_number_from_file(&data.metrics_nr, aliases_file);
     } else {
@@ -150,6 +153,27 @@ static int get_parent()
   return (rank - 1) / DEGREE;
 }
 
+static int get_degree_node()
+{
+  int rank;
+  int nprocs;
+
+  MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+  int degree = 0;
+
+  for(int i = 1; i <= DEGREE; ++i) {
+    if(rank * DEGREE + i < nprocs) {
+      ++degree;
+    }
+  }
+
+  return degree;
+}
+
+
+
 /* Receive EVPath address of parent split stone through MPI */
 void recv_addr_from_parent(char *addr)
 {
@@ -157,7 +181,7 @@ void recv_addr_from_parent(char *addr)
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
   MPI_Recv(addr, ADDRESS_SIZE, MPI_CHAR, get_parent(), 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-  
+
   printf("Process %d received from parent %s\n", rank, addr);
 }
 
@@ -167,7 +191,7 @@ void send_addr_to_children(char *addr)
   int rank, tag = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-  for(int i = 1; i <= DEGREE; ++i) {
+  for(int i = 1; i <= get_degree_node(); ++i) {
     MPI_Send(addr, ADDRESS_SIZE, MPI_CHAR, rank * DEGREE + i, tag, MPI_COMM_WORLD);
   }
 }
@@ -196,7 +220,7 @@ void compute_evpath_addr(char *addr)
   }
 
   string_list_addr = attr_list_to_string(CMget_contact_list(current_state.conn_mgr));
-  
+
   sprintf(addr, "%d:%s", current_state.split_stone, string_list_addr);
 
   memcpy(current_state.own_addr, addr, ADDRESS_SIZE);
@@ -246,7 +270,7 @@ void set_stones_actions()
     EVstone output = current_state.bridge_stone;
 
     char string_list[ADDRESS_SIZE];
-    
+
     EVstone remote_stone;
 
     if (sscanf(current_state.parent_addr, "%d:%s", &remote_stone, &string_list[0]) != 2) {
@@ -272,125 +296,133 @@ void set_stones_actions()
 
   /* Create multistone */
   if(!is_leaf()) {
-      CManager cm = current_state.conn_mgr;
-      
-      EVstone terminal_stone;
-      
-      terminal_stone = current_state.terminal_stone;
-      
-      EVassoc_terminal_action(current_state.conn_mgr, terminal_stone,
-                            metrics_format_list, compute_own_metrics, NULL);
+    CManager cm = current_state.conn_mgr;
 
-      EVaction split_action = EVassoc_split_action(cm, current_state.split_stone, NULL);
-      
-      EVaction_add_split_target(cm, current_state.split_stone, split_action, terminal_stone);
+    EVstone terminal_stone;
 
-      EVaction_add_split_target(cm, current_state.split_stone, split_action,
-                                current_state.multi_stone);
+    terminal_stone = current_state.terminal_stone;
 
-      static char *multi_func = "{\n\
-        int count_timestamps = 0;\n\
-        int event_index = 0;\n\
-        int degree = -1;\n\
-        int first_found_index = 0;\n\
+    EVassoc_terminal_action(current_state.conn_mgr, terminal_stone,
+                          metrics_format_list, compute_own_metrics, NULL);
+
+    EVaction split_action = EVassoc_split_action(cm, current_state.split_stone, NULL);
+
+    EVaction_add_split_target(cm, current_state.split_stone, split_action, terminal_stone);
+
+    EVaction_add_split_target(cm, current_state.split_stone, split_action,
+                              current_state.multi_stone);
+
+    static char *multi_func = "{\n\
+      int count_timestamps = 0;\n\
+      int event_index = 0;\n\
+      int max_degree = -1;\n\
+      int first_found_index = 0;\n\
+      \n\
+      static int counter = 0;\n\
+      \n\
+      metrics_t *a;\n\
+      \n\
+      /* Find firt metric with the desired timestamp */\n\
+      if (EVcount_metrics_t()) {\n\
+        int i;\n\
+        for(i = 0; i < EVcount_metrics_t(); i++) {\n\
+          a = EVdata_metrics_t(i);\n\
+          if(a->timestamp == counter) {\n\
+            max_degree = a->max_degree;\n\
+            first_found_index = i;\n\
+            break;\n\
+          }\n\
+        }\n\
+      }\n\
+      \n\
+      int current_node_degree = 0;\n\
+      int i;\n\
+      for(i = 1; i <= max_degree; ++i) {\n\
+        if(a->parent_rank * max_degree + i < a->nprocs) {\n\
+          ++current_node_degree;\n\
+        }\n\
+      }\n\
+      if (EVcount_metrics_t() >= current_node_degree + 1) {\n\
+        int i;\n\
         \n\
-        static int counter = 0;\n\
+        metrics_t c;\n\
+        c.metrics_nr = a->metrics_nr;\n\
         \n\
-        metrics_t *a;\n\
-        \n\
-        /* Find firt metric with the desired timestamp */\n\
-        if (EVcount_metrics_t()) {\n\
-          int i;\n\
-          for(i = 0; i < EVcount_metrics_t(); i++) {\n\
-            a = EVdata_metrics_t(i);\n\
-            if(a->timestamp == counter) {\n\
-              degree = a->degree;\n\
-              first_found_index = i;\n\
-              break;\n\
-            }\n\
+        /* Find if there are enough events in the queue with the desired timestamp */\n\
+        for(i = 0; i < EVcount_metrics_t(); i++) {\n\
+          metrics_t *b = EVdata_metrics_t(i);\n\
+          if(b->timestamp == counter) {\n\
+            ++count_timestamps;\n\
           }\n\
         }\n\
         \n\
-        if (EVcount_metrics_t() >= degree + 1) {\n\
-          int i;\n\
-          \n\
-          metrics_t c;\n\
-          c.metrics_nr = a->metrics_nr;\n\
-          \n\
-          /* Find if there are enough events in the queue with the desired timestamp */\n\
-          for(i = 0; i < EVcount_metrics_t(); i++) {\n\
-            metrics_t *b = EVdata_metrics_t(i);\n\
-            if(b->timestamp == counter) {\n\
-              ++count_timestamps;\n\
+        /*If there are enough events => aggregate them */\n\
+        if(count_timestamps == current_node_degree + 1) {\n\
+          if(a->timestamp == counter) {\n\
+            for(i = 0; i < a->metrics_nr; i++) {\n\
+              c.gather_info[i].min = a->gather_info[i].min;\n\
+              c.gather_info[i].max = a->gather_info[i].max;\n\
+              c.gather_info[i].sum = a->gather_info[i].sum;\n\
             }\n\
+            c.max_degree = a->max_degree;\n\
+            c.update_file = a->update_file;\n\
+            c.timestamp = counter;\n\
+            c.parent_rank = (a->parent_rank - 1) / max_degree;\n\
+            c.nprocs = a->nprocs;\n\
           }\n\
           \n\
-          /*If there are enough events => aggregate them */\n\
-          if(count_timestamps == degree + 1) {\n\
-            if(a->timestamp == counter) {\n\
-              for(i = 0; i < a->metrics_nr; i++) {\n\
-                c.gather_info[i].min = a->gather_info[i].min;\n\
-                c.gather_info[i].max = a->gather_info[i].max;\n\
-                c.gather_info[i].sum = a->gather_info[i].sum;\n\
-              }\n\
-              c.degree = a->degree;\n\
-              c.update_file = a->update_file;\n\
-              c.timestamp = counter;\n\
-            }\n\
-            \n\
-            while(event_index < EVcount_metrics_t()) {\n\
-              if(event_index != first_found_index){\n\
-                a = EVdata_metrics_t(event_index);\n\
-                if(a->timestamp == counter) {\n\
-                  for(i = 0; i < a->metrics_nr; i++) {\n\
-                    c.gather_info[i].sum += a->gather_info[i].sum;\n\
-                    if(c.gather_info[i].min > a->gather_info[i].min) {\n\
-                      c.gather_info[i].min = a->gather_info[i].min;\n\
-                    }\n\
-                    \n\
-                    if(c.gather_info[i].max < a->gather_info[i].max) {\n\
-                      c.gather_info[i].max = a->gather_info[i].max;\n\
-                    }\n\
+          while(event_index < EVcount_metrics_t()) {\n\
+            if(event_index != first_found_index){\n\
+              a = EVdata_metrics_t(event_index);\n\
+              if(a->timestamp == counter) {\n\
+                for(i = 0; i < a->metrics_nr; i++) {\n\
+                  c.gather_info[i].sum += a->gather_info[i].sum;\n\
+                  if(c.gather_info[i].min > a->gather_info[i].min) {\n\
+                    c.gather_info[i].min = a->gather_info[i].min;\n\
+                  }\n\
+                  \n\
+                  if(c.gather_info[i].max < a->gather_info[i].max) {\n\
+                    c.gather_info[i].max = a->gather_info[i].max;\n\
                   }\n\
                 }\n\
               }\n\
-              event_index++;\n\
             }\n\
-            \n\
-            /* Discard events already aggregated */\n\
-            int i = 0;\n\
-            while(i < EVcount_metrics_t()) {\n\
-              metrics_t *b = EVdata_metrics_t(i);\n\
-              if(b->timestamp == counter) {\n\
-                EVdiscard_metrics_t(i);\n\
-              } else {\n\
-                i++;\n\
-              }\n\
-            }\n\
-            /* submit the new, combined event */\n\
-            counter = (counter + 1)%100;\n\
-            EVsubmit(0, c);\n\
+            event_index++;\n\
           }\n\
+          \n\
+          /* Discard events already aggregated */\n\
+          int i = 0;\n\
+          while(i < EVcount_metrics_t()) {\n\
+            metrics_t *b = EVdata_metrics_t(i);\n\
+            if(b->timestamp == counter) {\n\
+              EVdiscard_metrics_t(i);\n\
+            } else {\n\
+              i++;\n\
+            }\n\
+          }\n\
+          /* submit the new, combined event */\n\
+          counter = (counter + 1)%100;\n\
+          EVsubmit(0, c);\n\
         }\n\
-      }\0\0";
+      }\n\
+    }\0\0";
 
-      char *mq = create_multityped_action_spec(queue_list, multi_func);
+    char *mq = create_multityped_action_spec(queue_list, multi_func);
 
-      EVassoc_multi_action(current_state.conn_mgr, current_state.multi_stone, mq, NULL);
+    EVassoc_multi_action(current_state.conn_mgr, current_state.multi_stone, mq, NULL);
   }
-
 }
 
 /* Start sending metrics value */
 void start_communication()
 {
-  int rank;
-
+  int rank, nprocs;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
   EVsource source = EVcreate_submit_handle(current_state.conn_mgr, current_state.bridge_stone,
                                            metrics_format_list);
-  
+
   /* Populate the storage data stucture with the metrics known by the program so far */
   initialize_metrics_crawler();
 
@@ -398,11 +430,15 @@ void start_communication()
 
   metrics_t data;
 
-  data.degree = DEGREE;
-  
+  data.max_degree = DEGREE;
+
+  data.parent_rank = get_parent();
+
   data.update_file = true;
 
   data.timestamp = counter;
+
+  data.nprocs = nprocs;
 
   initialize_metrics_crawler_number_from_file(&data.metrics_nr, aliases_file);
 
@@ -414,11 +450,16 @@ void start_communication()
 
   /* Send data periodically with different timestamps */
   while (1) {
+
     counter = (counter + 1) % MAX_TIMESTAMPS;
 
-    usleep(5000);
+    sleep(1);
 
     data.timestamp = counter;
+
+    data.parent_rank = get_parent();
+
+    data.nprocs = nprocs;
 
     initialize_metrics_crawler_number_from_file(&data.metrics_nr, aliases_file);
 
