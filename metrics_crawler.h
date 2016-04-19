@@ -16,121 +16,125 @@ static long old_nr_of_metrics = 0;
 
 typedef struct _aggregators_t aggregators_t;
 
-
 void initialize_metrics_crawler()
 {
-    init();
+  init();
 }
 
-void initialize_metrics_crawler_number_from_file(long *nr)
+void initialize_metrics_crawler_number_from_file(long *nr, char* filename)
 {
-    metrics_file = fopen ("file.txt", "r");
-    
-    fscanf(metrics_file, "%ld", nr);
+  metrics_file = fopen (filename, "r");
 
-    fclose(metrics_file);
+  if(fscanf(metrics_file, "%ld", nr) == 0) {
+    fprintf(stderr, "%s\n", "Error on reading metrics file");
+    exit(-1);
+  }
 
-    old_nr_of_metrics = total_metrics;
+  fclose(metrics_file);
 
-    total_metrics = *nr;
+  old_nr_of_metrics = total_metrics;
 
-    if(desired_metrics) {
-        for(int i = 0; i < old_nr_of_metrics; ++i) {
-            free(desired_metrics[i]);
-            desired_metrics[i] = NULL;
-        }
+  total_metrics = *nr;
 
-        free(desired_metrics);
-        desired_metrics = NULL;
+  if(desired_metrics) {
+
+    for(int i = 0; i < old_nr_of_metrics; ++i) {
+        free(desired_metrics[i]);
+        desired_metrics[i] = NULL;
     }
 
-    desired_metrics = (char **) calloc (total_metrics, sizeof(char *));
+    free(desired_metrics);
+
+    desired_metrics = NULL;
+  }
+
+  desired_metrics = (char **) calloc (total_metrics, sizeof(char *));
 }
 
 void initialize_metrics_crawler_number_from_memory(long *nr)
 {
-    *nr = total_metrics;
+  *nr = total_metrics;
 }
 
 void metrics_crawler_results_memory(aggregators_t *result)
 {
-    int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  int rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    for(int i = 0; i < total_metrics; ++i) {
-        double (*func)();
+  for(int i = 0; i < total_metrics; ++i) {
+    double (*func)();
 
-        func = get_value(desired_metrics[i]);
+    func = get_value(desired_metrics[i]);
 
-        double metric_result = 0;
-        
-        if(!func && !rank) {
-            fprintf(stderr, "Metric \"%s\" not supported\n", desired_metrics[i]);
-        } else if(func){
-            metric_result = func();
-        }
-
-        result[i].min = metric_result;
-        result[i].max = metric_result;
-        result[i].sum = metric_result;
+    double metric_result = 0;
+    
+    if(!func && !rank) {
+        fprintf(stderr, "Metric \"%s\" not supported\n", desired_metrics[i]);
+    } else if(func){
+        metric_result = func();
     }
 
+    result[i].min = metric_result;
+    result[i].max = metric_result;
+    result[i].sum = metric_result;
+  }
 }
 
-int metrics_crawler_results_file(aggregators_t *result)
+int metrics_crawler_results_file(aggregators_t *result, char *filename)
 {
-    int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  int rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-    metrics_file = fopen("file.txt", "r");
+  metrics_file = fopen(filename, "r");
 
-    char line[MAX_LENGTH_ALIAS];
+  char line[MAX_LENGTH_ALIAS];
 
-    long metric_number = 0;
+  long metric_number = 0;
 
-    long number = 0;
+  long number = 0;
 
-    int needs_sync = false;
+  int needs_sync = false;
 
-    if (metrics_file == NULL) {
-       exit(EXIT_FAILURE);
+  if (metrics_file == NULL) {
+    exit(-1);
+  }
+
+  if(fscanf(metrics_file, "%ld\n", &number) == -1) {
+    fprintf(stderr, "%s\n", "Error while reading metrics file");
+    exit(-1);
+  }
+
+  while (fscanf(metrics_file, "%s\n", line) != -1) {
+    if((number != old_nr_of_metrics) ||
+       (desired_metrics[metric_number] && strcmp(desired_metrics[metric_number], line))) {
+      needs_sync = true;
     }
 
-    if(fscanf(metrics_file, "%ld\n", &number) == -1) {
-        fprintf(stderr, "%s\n", "Error while reading metrics file");
+    desired_metrics[metric_number] = strdup(line);
+
+    double (*func)();
+
+    func = get_value(line);
+
+    double metric_result = 0;
+
+    if(!func && !rank) {
+      fprintf(stderr, "Metric \"%s\" not supported\n", line);
+    } else if(func) {
+      metric_result = func();
     }
 
-    while (fscanf(metrics_file, "%s\n", line) != -1) {
-        if(number != old_nr_of_metrics ||
-          (desired_metrics[metric_number] && strcmp(desired_metrics[metric_number], line))) {
-            needs_sync = true;
-        }        
 
-        desired_metrics[metric_number] = strdup(line);
+    result[metric_number].min = metric_result;
+    result[metric_number].max = metric_result;
+    result[metric_number].sum = metric_result;
 
-        double (*func)();
-        
-        func = get_value(line);
+    ++metric_number;
+  }
 
-        double metric_result = 0;
-        
-        if(!func && !rank) {
-            fprintf(stderr, "Metric \"%s\" not supported\n", line);
-        } else if(func) {
-            metric_result = func();
-        }
+  fclose(metrics_file);
 
-
-        result[metric_number].min = metric_result;
-        result[metric_number].max = metric_result;
-        result[metric_number].sum = metric_result;
-
-        ++metric_number;
-    }
-
-    fclose(metrics_file);
-
-    return needs_sync;
+  return needs_sync;
 }
 
 #endif

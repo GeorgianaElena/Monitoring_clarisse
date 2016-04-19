@@ -15,59 +15,62 @@
 #define DEGREE 2
 #define ADDRESS_SIZE 2048
 #define MAX_TIMESTAMPS 100
+#define MAX_FILENAME_LENGTH 100
+
+char aliases_file[MAX_FILENAME_LENGTH];
 
 typedef struct _node_state_t{
-    char parent_addr[ADDRESS_SIZE];
-    char own_addr[ADDRESS_SIZE];
+  char parent_addr[ADDRESS_SIZE];
+  char own_addr[ADDRESS_SIZE];
 
-    EVstone multi_stone;
-    EVstone bridge_stone;
-    EVstone split_stone;
-    EVstone terminal_stone;
+  EVstone multi_stone;
+  EVstone bridge_stone;
+  EVstone split_stone;
+  EVstone terminal_stone;
 
-    /* Only valid for root */
-    EVstone agreg_terminal_stone;
+  /* Valid only for root */
+  EVstone agreg_terminal_stone;
 
-    CManager conn_mgr;
+  CManager conn_mgr;
 } node_state_t;
 
 typedef struct _aggregators_t{
-    double min;
-    double max;
-    double sum;
+  double min;
+  double max;
+  double sum;
 } aggregators_t, *aggregators_t_ptr;
 
 typedef struct _metrics_t{
-    long metrics_nr;
-    aggregators_t *gather_info;
-    int degree;
-    int update_file;
-    long timestamp;
+  long metrics_nr;
+  aggregators_t *gather_info;
+  int degree;
+  int update_file;
+  long timestamp;
 } metrics_t, *metrics_t_ptr;
 
 static FMField aggregators_field_list[] = 
 {
-    {"min", "float", sizeof(double), FMOffset(aggregators_t_ptr, min)},
-    {"max", "float", sizeof(double), FMOffset(aggregators_t_ptr, max)},
-    {"sum", "float", sizeof(double), FMOffset(aggregators_t_ptr, sum)},
-    {NULL, NULL}
+  {"min", "float", sizeof(double), FMOffset(aggregators_t_ptr, min)},
+  {"max", "float", sizeof(double), FMOffset(aggregators_t_ptr, max)},
+  {"sum", "float", sizeof(double), FMOffset(aggregators_t_ptr, sum)},
+  {NULL, NULL}
 };
 
 static FMField metrics_field_list[] =
 {
-    {"metrics_nr", "integer", sizeof(long), FMOffset(metrics_t_ptr, metrics_nr)},
-    {"gather_info", "aggregators_t[metrics_nr]", sizeof(aggregators_t), FMOffset(metrics_t_ptr, gather_info)},
-    {"degree", "integer", sizeof(int), FMOffset(metrics_t_ptr, degree)},
-    {"update_file", "integer", sizeof(int), FMOffset(metrics_t_ptr, update_file)},
-    {"timestamp", "integer", sizeof(long), FMOffset(metrics_t_ptr, timestamp)},
-    {NULL, NULL}
+  {"metrics_nr", "integer", sizeof(long), FMOffset(metrics_t_ptr, metrics_nr)},
+  {"gather_info", "aggregators_t[metrics_nr]", sizeof(aggregators_t), FMOffset(metrics_t_ptr, gather_info)},
+  {"degree", "integer", sizeof(int), FMOffset(metrics_t_ptr, degree)},
+  {"update_file", "integer", sizeof(int), FMOffset(metrics_t_ptr, update_file)},
+  {"timestamp", "integer", sizeof(long), FMOffset(metrics_t_ptr, timestamp)},
+  {NULL, NULL}
 };
 
 static FMStructDescRec metrics_format_list[] =
 {
-    {"metrics_t", metrics_field_list, sizeof(metrics_t), NULL},
-    {"aggregators_t", aggregators_field_list, sizeof(aggregators_t), NULL},
-    {NULL, NULL}
+  {"metrics_t", metrics_field_list, sizeof(metrics_t), NULL},
+  {"aggregators_t", aggregators_field_list, sizeof(aggregators_t), NULL},
+  {NULL, NULL}
 };
 
 static FMStructDescList queue_list[] = {metrics_format_list, NULL};
@@ -80,7 +83,7 @@ static int get_parent();
 void recv_addr_from_parent(char *addr);
 void send_addr_to_children(char *addr);
 void initialize_monitoring();
-void create_stones();
+void set_stones_actions();
 void start_listening();
 void start_communication();
 void compute_evpath_addr(char *addr);
