@@ -62,11 +62,17 @@ int main(int argc, char **argv)
 /* Final aggregated system state */
 static int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
 {
+  int nprocs;
+  MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+
   metrics_t_ptr event = vevent;
 
   for(int i = 0; i < event->metrics_nr; ++i) {
-    printf("Min = %f\tMax = %f\tAverage = %f\n", event->gather_info[i].min,
-            event->gather_info[i].max, event->gather_info[i].sum);
+    printf("-------------------------------------------"
+           "-------------------------------------------\n"
+           "%s    Min = %f    Max = %f    Average = %f\n",
+            desired_metrics[i], event->gather_info[i].min,
+            event->gather_info[i].max, event->gather_info[i].sum / nprocs);
   }
 
   return 0;
@@ -453,7 +459,7 @@ void start_communication()
 
     counter = (counter + 1) % MAX_TIMESTAMPS;
 
-    sleep(1);
+    usleep(5000);
 
     data.timestamp = counter;
 

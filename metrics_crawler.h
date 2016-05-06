@@ -104,7 +104,7 @@ int metrics_crawler_results_file(aggregators_t *result, char *filename)
     exit(-1);
   }
 
-  while (fscanf(metrics_file, "%s\n", line) != -1) {
+  while (fscanf(metrics_file, "%s\n", line) != -1 && metric_number < total_metrics) {
     if((number != old_nr_of_metrics) ||
        (desired_metrics[metric_number] && strcmp(desired_metrics[metric_number], line))) {
       needs_sync = true;

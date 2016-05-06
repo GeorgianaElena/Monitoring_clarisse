@@ -1,5 +1,5 @@
 CC = mpicc
-CFLAGS = -O3 -Wall -g -I ./include
+CFLAGS = -std=gnu11 -O3 -Wall -g -I ./include
 LDFLAGS = -levpath -L ./lib -latl -lffs -lcercs_env -ldill
 
 build: metrics_aggregator
