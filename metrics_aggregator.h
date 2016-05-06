@@ -11,13 +11,14 @@
 #include "unistd.h"
 #include "evpath.h"
 #include "stdbool.h"
+#include "stdint.h"
 
-#define DEGREE 2
+#define DEGREE 3
 #define ADDRESS_SIZE 2048
-#define MAX_TIMESTAMPS 100
 #define MAX_FILENAME_LENGTH 100
 
 char aliases_file[MAX_FILENAME_LENGTH];
+const uint64_t MAX_TIMESTAMPS = 300;
 
 typedef struct _node_state_t{
   char parent_addr[ADDRESS_SIZE];

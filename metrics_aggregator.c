@@ -62,10 +62,18 @@ int main(int argc, char **argv)
 /* Final aggregated system state */
 static int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
 {
-  int nprocs;
+  int nprocs, rank;
   MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
   metrics_t_ptr event = vevent;
+
+  if(event->timestamp == MAX_TIMESTAMPS - 1) {
+    printf("rank = %d finalizeaza\n", rank);
+    MPI_Finalize();
+
+    exit(0);
+  }
 
   for(int i = 0; i < event->metrics_nr; ++i) {
     printf("-------------------------------------------"
@@ -81,13 +89,20 @@ static int final_result(CManager cm, void *vevent, void *client_data, attr_list 
 /* Compute metrics for current process */
 static int compute_own_metrics(CManager cm, void *vevent, void *client_data, attr_list attrs)
 {
+  metrics_t_ptr event = vevent;
+
   int rank, nprocs;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
-  metrics_t_ptr event = vevent;
+  static int *count_timestamps;
 
-  static int count_timestamps[MAX_TIMESTAMPS] = { 0 };
+  static int initialized = 0;
+
+  if(!initialized) {
+    count_timestamps = calloc(MAX_TIMESTAMPS, sizeof(int));
+    initialized = 1;
+  }
 
   static int counter = 0;
 
@@ -128,9 +143,17 @@ static int compute_own_metrics(CManager cm, void *vevent, void *client_data, att
 
     count_timestamps[counter] = 0;
 
-    counter = (counter + 1) % MAX_TIMESTAMPS;
+    ++counter;
 
     EVsubmit(source, &data, NULL);
+
+    if(data.timestamp == MAX_TIMESTAMPS - 1) {
+      printf("rank = %d finalizeaza\n", rank);
+      MPI_Finalize();
+
+      exit(0);
+    }
+
   }
 
   return 0;
@@ -407,7 +430,7 @@ void set_stones_actions()
             }\n\
           }\n\
           /* submit the new, combined event */\n\
-          counter = (counter + 1)%100;\n\
+          ++counter;\n\
           EVsubmit(0, c);\n\
         }\n\
       }\n\
@@ -457,7 +480,7 @@ void start_communication()
   /* Send data periodically with different timestamps */
   while (1) {
 
-    counter = (counter + 1) % MAX_TIMESTAMPS;
+    ++counter;
 
     usleep(5000);
 
@@ -474,5 +497,13 @@ void start_communication()
     data.update_file = metrics_crawler_results_file(data.gather_info, aliases_file);
 
     EVsubmit(source, &data, NULL);
+
+    if(data.timestamp == MAX_TIMESTAMPS - 1) {
+      printf("rank = %d finalizeaza\n", rank);
+      MPI_Finalize();
+
+      exit(0);
+    }
+
   }
 }
