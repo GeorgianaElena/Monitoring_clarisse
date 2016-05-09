@@ -44,11 +44,6 @@ int main(int argc, char **argv)
 
 /*----------------------------------------------------------------------------------*/
 
-  /* Create leafs communicator for benchmarking*/
-#ifdef BENCHMARKING
-  create_leafs_comm();
-#endif
-
   /* Start initialization */
   initialize_monitoring();
 
@@ -88,28 +83,14 @@ static int final_result(CManager cm, void *vevent, void *client_data, attr_list 
 
   metrics_t_ptr event = vevent;
 
-  /* Open for writing results file */
 #ifdef BENCHMARKING
-  char filename[MAX_FILENAME_LENGTH];
-  sprintf(filename, "./results/results_%dnodes_%ldmetrics_%ddegree_%ld",
-                     nprocs, event->metrics_nr, DEGREE, MAX_TIMESTAMPS);
-  results = fopen(filename, "a+");
-
-  double end_time, mintime;
-  measure_time(&end_time, &mintime);
-
-  int rank_comm_leafs;
-  MPI_Comm_rank(comm_leafs, &rank_comm_leafs);
-
-  if(rank_comm_leafs == 0) {
-    fprintf(results, "min = %lf\n", end_time - mintime);
-  }
-
-  fclose(results);
+  double end_time = MPI_Wtime();
+  fprintf(results, "min = %lf\n", end_time - event->start_time);
 #endif
 
   if(event->timestamp == MAX_TIMESTAMPS - 1) {
     printf("Process = %d stops\n", rank);
+    fclose(results);
     MPI_Finalize();
 
     exit(0);
@@ -166,6 +147,10 @@ static int compute_own_metrics(CManager cm, void *vevent, void *client_data, att
     data.parent_rank = get_parent();
 
     data.nprocs = nprocs;
+
+#ifdef BENCHMARKING
+    data.start_time = -1;
+#endif
 
     if(event->update_file) {
       initialize_metrics_crawler_number_from_file(&data.metrics_nr, aliases_file);
@@ -310,6 +295,14 @@ void set_stones_actions()
     EVstone_set_output(cm, current_state.multi_stone, 0, output);
 
   } else {
+    int nprocs;
+    MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+#ifdef BENCHMARKING
+    char filename[MAX_FILENAME_LENGTH];
+    sprintf(filename, "./results/results_%dnodes_%ddegree_%ld",
+                     nprocs, DEGREE, MAX_TIMESTAMPS);
+    results = fopen(filename, "w");
+#endif
 
     EVassoc_terminal_action(current_state.conn_mgr, current_state.agreg_terminal_stone,
                             metrics_format_list, final_result, NULL);
@@ -376,10 +369,12 @@ void start_communication()
 
   metrics_crawler_results_file(data.gather_info, aliases_file);
 
-#ifdef BENCHMARKING
-  double start_time, min_time;
 
-  measure_time(&start_time, &min_time);
+#ifdef BENCHMARKING
+  double start_time;
+  start_time = MPI_Wtime();
+
+  data.start_time = start_time;
 #endif
 
   EVsubmit(source, &data, NULL);
@@ -390,7 +385,7 @@ void start_communication()
 
     ++counter;
 
-    usleep(5000);
+    usleep(100000);
 
     data.timestamp = counter;
 
@@ -407,7 +402,10 @@ void start_communication()
     EVsubmit(source, &data, NULL);
 
 #ifdef BENCHMARKING
-    measure_time(&start_time, &min_time);
+  double start_time;
+  start_time = MPI_Wtime();
+
+  data.start_time = start_time;
 #endif
 
     if(data.timestamp == MAX_TIMESTAMPS - 1) {
