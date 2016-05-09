@@ -1,7 +1,13 @@
 #include "metrics_aggregator.h"
 #include "metrics_crawler.h"
+#include "helpers.h"
+#include "inttypes.h"
 
 static node_state_t current_state;
+
+#ifdef BENCHMARKING
+FILE *results;
+#endif
 
 int main(int argc, char **argv)
 {
@@ -13,13 +19,15 @@ int main(int argc, char **argv)
 
   MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
-  if (argc < 2) {
+  if (argc < 4) {
 
     if(rank == 0) {
       fprintf(stderr, "----------------------------\n"
                       "Invalid number of arguments\n"
                       "----------------------------\n"
-                      "Arguments: metrics aliases file\n");
+                      "Arguments: metrics aliases file\n"
+                      "           maximum number of events\n"
+                      "           maximum node degree\n");
     }
 
     MPI_Finalize();
@@ -27,7 +35,19 @@ int main(int argc, char **argv)
     exit(0);
   }
 
+  /* Metrics file */
   strcpy(aliases_file, argv[1]);
+  /* Maximum number of events */
+  sscanf(argv[2], "%" PRIu64, &MAX_TIMESTAMPS);
+  /* Maximum node degree */
+  sscanf(argv[3], "%d", &DEGREE);
+
+/*----------------------------------------------------------------------------------*/
+
+  /* Create leafs communicator for benchmarking*/
+#ifdef BENCHMARKING
+  create_leafs_comm();
+#endif
 
   /* Start initialization */
   initialize_monitoring();
@@ -68,8 +88,28 @@ static int final_result(CManager cm, void *vevent, void *client_data, attr_list 
 
   metrics_t_ptr event = vevent;
 
+  /* Open for writing results file */
+#ifdef BENCHMARKING
+  char filename[MAX_FILENAME_LENGTH];
+  sprintf(filename, "./results/results_%dnodes_%ldmetrics_%ddegree_%ld",
+                     nprocs, event->metrics_nr, DEGREE, MAX_TIMESTAMPS);
+  results = fopen(filename, "a+");
+
+  double end_time, mintime;
+  measure_time(&end_time, &mintime);
+
+  int rank_comm_leafs;
+  MPI_Comm_rank(comm_leafs, &rank_comm_leafs);
+
+  if(rank_comm_leafs == 0) {
+    fprintf(results, "min = %lf\n", end_time - mintime);
+  }
+
+  fclose(results);
+#endif
+
   if(event->timestamp == MAX_TIMESTAMPS - 1) {
-    printf("rank = %d finalizeaza\n", rank);
+    printf("Process = %d stops\n", rank);
     MPI_Finalize();
 
     exit(0);
@@ -148,7 +188,7 @@ static int compute_own_metrics(CManager cm, void *vevent, void *client_data, att
     EVsubmit(source, &data, NULL);
 
     if(data.timestamp == MAX_TIMESTAMPS - 1) {
-      printf("rank = %d finalizeaza\n", rank);
+      printf("Process = %d stops\n", rank);
       MPI_Finalize();
 
       exit(0);
@@ -158,50 +198,6 @@ static int compute_own_metrics(CManager cm, void *vevent, void *client_data, att
 
   return 0;
 }
-
-static int is_leaf()
-{
-  int rank;
-  int nprocs;
-
-  MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-  return ((rank * DEGREE + 1 >= nprocs) && (nprocs > 1)); 
-}
-
-/* Get parent rank in current topology */
-static int get_parent()
-{
-  int rank;
-  int nprocs;
-
-  MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-  return (rank - 1) / DEGREE;
-}
-
-static int get_degree_node()
-{
-  int rank;
-  int nprocs;
-
-  MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-  int degree = 0;
-
-  for(int i = 1; i <= DEGREE; ++i) {
-    if(rank * DEGREE + i < nprocs) {
-      ++degree;
-    }
-  }
-
-  return degree;
-}
-
-
 
 /* Receive EVPath address of parent split stone through MPI */
 void recv_addr_from_parent(char *addr)
@@ -341,101 +337,6 @@ void set_stones_actions()
     EVaction_add_split_target(cm, current_state.split_stone, split_action,
                               current_state.multi_stone);
 
-    static char *multi_func = "{\n\
-      int count_timestamps = 0;\n\
-      int event_index = 0;\n\
-      int max_degree = -1;\n\
-      int first_found_index = 0;\n\
-      \n\
-      static int counter = 0;\n\
-      \n\
-      metrics_t *a;\n\
-      \n\
-      /* Find firt metric with the desired timestamp */\n\
-      if (EVcount_metrics_t()) {\n\
-        int i;\n\
-        for(i = 0; i < EVcount_metrics_t(); i++) {\n\
-          a = EVdata_metrics_t(i);\n\
-          if(a->timestamp == counter) {\n\
-            max_degree = a->max_degree;\n\
-            first_found_index = i;\n\
-            break;\n\
-          }\n\
-        }\n\
-      }\n\
-      \n\
-      int current_node_degree = 0;\n\
-      int i;\n\
-      for(i = 1; i <= max_degree; ++i) {\n\
-        if(a->parent_rank * max_degree + i < a->nprocs) {\n\
-          ++current_node_degree;\n\
-        }\n\
-      }\n\
-      if (EVcount_metrics_t() >= current_node_degree + 1) {\n\
-        int i;\n\
-        \n\
-        metrics_t c;\n\
-        c.metrics_nr = a->metrics_nr;\n\
-        \n\
-        /* Find if there are enough events in the queue with the desired timestamp */\n\
-        for(i = 0; i < EVcount_metrics_t(); i++) {\n\
-          metrics_t *b = EVdata_metrics_t(i);\n\
-          if(b->timestamp == counter) {\n\
-            ++count_timestamps;\n\
-          }\n\
-        }\n\
-        \n\
-        /*If there are enough events => aggregate them */\n\
-        if(count_timestamps == current_node_degree + 1) {\n\
-          if(a->timestamp == counter) {\n\
-            for(i = 0; i < a->metrics_nr; i++) {\n\
-              c.gather_info[i].min = a->gather_info[i].min;\n\
-              c.gather_info[i].max = a->gather_info[i].max;\n\
-              c.gather_info[i].sum = a->gather_info[i].sum;\n\
-            }\n\
-            c.max_degree = a->max_degree;\n\
-            c.update_file = a->update_file;\n\
-            c.timestamp = counter;\n\
-            c.parent_rank = (a->parent_rank - 1) / max_degree;\n\
-            c.nprocs = a->nprocs;\n\
-          }\n\
-          \n\
-          while(event_index < EVcount_metrics_t()) {\n\
-            if(event_index != first_found_index){\n\
-              a = EVdata_metrics_t(event_index);\n\
-              if(a->timestamp == counter) {\n\
-                for(i = 0; i < a->metrics_nr; i++) {\n\
-                  c.gather_info[i].sum += a->gather_info[i].sum;\n\
-                  if(c.gather_info[i].min > a->gather_info[i].min) {\n\
-                    c.gather_info[i].min = a->gather_info[i].min;\n\
-                  }\n\
-                  \n\
-                  if(c.gather_info[i].max < a->gather_info[i].max) {\n\
-                    c.gather_info[i].max = a->gather_info[i].max;\n\
-                  }\n\
-                }\n\
-              }\n\
-            }\n\
-            event_index++;\n\
-          }\n\
-          \n\
-          /* Discard events already aggregated */\n\
-          int i = 0;\n\
-          while(i < EVcount_metrics_t()) {\n\
-            metrics_t *b = EVdata_metrics_t(i);\n\
-            if(b->timestamp == counter) {\n\
-              EVdiscard_metrics_t(i);\n\
-            } else {\n\
-              i++;\n\
-            }\n\
-          }\n\
-          /* submit the new, combined event */\n\
-          ++counter;\n\
-          EVsubmit(0, c);\n\
-        }\n\
-      }\n\
-    }\0\0";
-
     char *mq = create_multityped_action_spec(queue_list, multi_func);
 
     EVassoc_multi_action(current_state.conn_mgr, current_state.multi_stone, mq, NULL);
@@ -475,7 +376,14 @@ void start_communication()
 
   metrics_crawler_results_file(data.gather_info, aliases_file);
 
+#ifdef BENCHMARKING
+  double start_time, min_time;
+
+  measure_time(&start_time, &min_time);
+#endif
+
   EVsubmit(source, &data, NULL);
+
 
   /* Send data periodically with different timestamps */
   while (1) {
@@ -498,8 +406,12 @@ void start_communication()
 
     EVsubmit(source, &data, NULL);
 
+#ifdef BENCHMARKING
+    measure_time(&start_time, &min_time);
+#endif
+
     if(data.timestamp == MAX_TIMESTAMPS - 1) {
-      printf("rank = %d finalizeaza\n", rank);
+      printf("Process = %d stops\n", rank);
       MPI_Finalize();
 
       exit(0);
