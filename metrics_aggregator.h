@@ -15,12 +15,21 @@
 
 #define ADDRESS_SIZE 2048
 #define MAX_FILENAME_LENGTH 100
-
 #define BENCHMARKING
+
+#ifdef BENCHMARKING
+FILE *results = NULL;
+#endif
+
+#ifndef BENCHMARKING
+FILE *aggregated_metrics = NULL;
+#endif
+
 
 char aliases_file[MAX_FILENAME_LENGTH];
 int DEGREE;
 uint64_t MAX_TIMESTAMPS;
+useconds_t pulse_interval;
 
 typedef struct _node_state_t{
   char parent_addr[ADDRESS_SIZE];
@@ -233,7 +242,6 @@ static char *multi_func = "{\n\
     \n\
     metrics_t c;\n\
     c.metrics_nr = a->metrics_nr;\n\
-    c.start_time = a->start_time;\n\
     \n\
     /* Find if there are enough events in the queue with the desired timestamp */\n\
     for(i = 0; i < EVcount_metrics_t(); i++) {\n\
@@ -246,6 +254,7 @@ static char *multi_func = "{\n\
     /*If there are enough events => aggregate them */\n\
     if(count_timestamps == current_node_degree + 1) {\n\
       if(a->timestamp == counter) {\n\
+        c.start_time = a->start_time;\n\
         for(i = 0; i < a->metrics_nr; i++) {\n\
           c.gather_info[i].min = a->gather_info[i].min;\n\
           c.gather_info[i].max = a->gather_info[i].max;\n\

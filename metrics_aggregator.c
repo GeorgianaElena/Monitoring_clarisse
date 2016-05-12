@@ -5,10 +5,6 @@
 
 static node_state_t current_state;
 
-#ifdef BENCHMARKING
-FILE *results;
-#endif
-
 int main(int argc, char **argv)
 {
   int rank, nprocs, provided;
@@ -19,7 +15,7 @@ int main(int argc, char **argv)
 
   MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
-  if (argc < 4) {
+  if (argc < 5) {
 
     if(rank == 0) {
       fprintf(stderr, "----------------------------\n"
@@ -27,7 +23,8 @@ int main(int argc, char **argv)
                       "----------------------------\n"
                       "Arguments: metrics aliases file\n"
                       "           maximum number of events\n"
-                      "           maximum node degree\n");
+                      "           maximum node degree\n"
+                      "           pulsation interval (mircrosec)\n");
     }
 
     MPI_Finalize();
@@ -41,6 +38,54 @@ int main(int argc, char **argv)
   sscanf(argv[2], "%" PRIu64, &MAX_TIMESTAMPS);
   /* Maximum node degree */
   sscanf(argv[3], "%d", &DEGREE);
+  /* Pulsation interval (microseconds) */
+  sscanf(argv[4], "%u", &pulse_interval);
+
+/*----------------------------------------------------------------------------------*/
+
+#ifdef BENCHMARKING
+  if(rank == 0) {
+    char filename[MAX_FILENAME_LENGTH];
+    char dirname[MAX_FILENAME_LENGTH];
+    long nr_metrics;
+
+    metrics_file = fopen (aliases_file, "r");
+    if(!metrics_file) {
+      perror("Error on opening metric aliases file");
+      exit(-1);
+    }
+
+    if(fscanf(metrics_file, "%ld", &nr_metrics) == 0) {
+      perror("Error on reading metrics file");
+      exit(-1);
+    }
+
+    fclose(metrics_file);
+
+    sprintf(dirname, "%d microsec_%d nodes_%d degree_%ld events_%ld metrics", 
+                      pulse_interval, nprocs, DEGREE, MAX_TIMESTAMPS, nr_metrics);
+    mkdir(dirname, S_IRWXU);
+
+    sprintf(filename, "./%s/results_%dnodes_%ddegree_%ldevents_%ldmetrics",
+                       dirname, nprocs, DEGREE, MAX_TIMESTAMPS, nr_metrics);
+
+    results = fopen(filename, "w");
+
+    if(!results) {
+      perror("Error oppening benchmarking results file");
+      exit(-1);
+    }
+  }
+#else
+  if(rank == 0) {
+    aggregated_metrics = fopen("aggregated_metrics", "w");
+
+    if(!aggregated_metrics) {
+      perror("Error oppening metrics results file");
+      exit(-1);
+    }
+  }
+#endif
 
 /*----------------------------------------------------------------------------------*/
 
@@ -85,23 +130,28 @@ static int final_result(CManager cm, void *vevent, void *client_data, attr_list 
 
 #ifdef BENCHMARKING
   double end_time = MPI_Wtime();
-  fprintf(results, "min = %lf\n", end_time - event->start_time);
-#endif
-
-  if(event->timestamp == MAX_TIMESTAMPS - 1) {
-    printf("Process = %d stops\n", rank);
-    fclose(results);
-    MPI_Finalize();
-
-    exit(0);
-  }
-
+  fprintf(results, "%ld %lf\n", event->timestamp, end_time - event->start_time);
+#else
   for(int i = 0; i < event->metrics_nr; ++i) {
-    printf("-------------------------------------------"
+    fprintf(aggregated_metrics, 
+           "-------------------------------------------"
            "-------------------------------------------\n"
            "%s    Min = %f    Max = %f    Average = %f\n",
             desired_metrics[i], event->gather_info[i].min,
             event->gather_info[i].max, event->gather_info[i].sum / nprocs);
+  }
+#endif
+
+  if(event->timestamp == MAX_TIMESTAMPS - 1) {
+    printf("Process = %d stops\n", rank);
+#ifdef BENCHMARKING
+    fclose(results);
+#else
+    fclose(aggregated_metrics);
+#endif
+    MPI_Finalize();
+
+    exit(0);
   }
 
   return 0;
@@ -297,12 +347,6 @@ void set_stones_actions()
   } else {
     int nprocs;
     MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
-#ifdef BENCHMARKING
-    char filename[MAX_FILENAME_LENGTH];
-    sprintf(filename, "./results/results_%dnodes_%ddegree_%ld",
-                     nprocs, DEGREE, MAX_TIMESTAMPS);
-    results = fopen(filename, "w");
-#endif
 
     EVassoc_terminal_action(current_state.conn_mgr, current_state.agreg_terminal_stone,
                             metrics_format_list, final_result, NULL);
@@ -379,13 +423,20 @@ void start_communication()
 
   EVsubmit(source, &data, NULL);
 
+  if(data.timestamp == MAX_TIMESTAMPS - 1) {
+    printf("Process = %d stops\n", rank);
+    MPI_Finalize();
+
+    exit(0);
+  }
+
 
   /* Send data periodically with different timestamps */
   while (1) {
 
     ++counter;
 
-    usleep(100000);
+    usleep(pulse_interval);
 
     data.timestamp = counter;
 
@@ -399,14 +450,20 @@ void start_communication()
 
     data.update_file = metrics_crawler_results_file(data.gather_info, aliases_file);
 
-    EVsubmit(source, &data, NULL);
-
 #ifdef BENCHMARKING
   double start_time;
   start_time = MPI_Wtime();
 
   data.start_time = start_time;
 #endif
+
+     if(data.timestamp == MAX_TIMESTAMPS - 1) {
+      printf("Process = %d stops\n", rank);
+      MPI_Finalize();
+
+      exit(0);
+    }
+   EVsubmit(source, &data, NULL);
 
     if(data.timestamp == MAX_TIMESTAMPS - 1) {
       printf("Process = %d stops\n", rank);

@@ -24,9 +24,13 @@ void initialize_metrics_crawler()
 void initialize_metrics_crawler_number_from_file(long *nr, char* filename)
 {
   metrics_file = fopen (filename, "r");
+  if(!metrics_file) {
+    perror("Error on opening metric aliases file");
+    exit(-1);
+  }
 
   if(fscanf(metrics_file, "%ld", nr) == 0) {
-    fprintf(stderr, "%s\n", "Error on reading metrics file");
+    perror("Error on reading metrics file");
     exit(-1);
   }
 
@@ -86,6 +90,10 @@ int metrics_crawler_results_file(aggregators_t *result, char *filename)
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
   metrics_file = fopen(filename, "r");
+  if(!metrics_file) {
+    perror("Error on opening metric aliases file");
+    exit(-1);
+  }
 
   char line[MAX_LENGTH_ALIAS];
 
