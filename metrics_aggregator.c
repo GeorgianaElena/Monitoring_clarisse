@@ -457,20 +457,14 @@ void start_communication()
   data.start_time = start_time;
 #endif
 
-     if(data.timestamp == MAX_TIMESTAMPS - 1) {
-      printf("Process = %d stops\n", rank);
-      MPI_Finalize();
+  EVsubmit(source, &data, NULL);
 
-      exit(0);
-    }
-   EVsubmit(source, &data, NULL);
+  if(data.timestamp == MAX_TIMESTAMPS - 1) {
+    printf("Process = %d stops\n", rank);
+    MPI_Finalize();
 
-    if(data.timestamp == MAX_TIMESTAMPS - 1) {
-      printf("Process = %d stops\n", rank);
-      MPI_Finalize();
-
-      exit(0);
-    }
+    exit(0);
+  }
 
   }
 }
