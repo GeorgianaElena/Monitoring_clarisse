@@ -2,6 +2,7 @@
 #include "metrics_crawler.h"
 #include "helpers.h"
 #include "inttypes.h"
+#include "sys/stat.h"
 
 static node_state_t current_state;
 
@@ -62,12 +63,15 @@ int main(int argc, char **argv)
 
     fclose(metrics_file);
 
-    sprintf(dirname, "%d microsec_%d nodes_%d degree_%ld events_%ld metrics", 
-                      pulse_interval, nprocs, DEGREE, MAX_TIMESTAMPS, nr_metrics);
-    mkdir(dirname, S_IRWXU);
+    sprintf(dirname, "EVPath_results");
 
-    sprintf(filename, "./%s/results_%dnodes_%ddegree_%ldevents_%ldmetrics",
-                       dirname, nprocs, DEGREE, MAX_TIMESTAMPS, nr_metrics);
+    struct stat st = {0};
+    if (stat(dirname, &st) == -1) {
+      mkdir(dirname, S_IRWXU);
+    }
+
+    sprintf(filename, "./%s/evpath_%dnodes_%ddegree_%ldevents_%ldmetrics_%upulse",
+                       dirname, nprocs, DEGREE, MAX_TIMESTAMPS, nr_metrics, pulse_interval);
 
     results = fopen(filename, "w");
 
