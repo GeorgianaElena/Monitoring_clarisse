@@ -2,42 +2,21 @@
 #define STORAGE_H
 
 #include "available_metrics.h"
-#include "uthash.h"
 #include "string.h"
 #include "stdio.h"
 #include "pthread.h"
-
-typedef struct htable{
-  char key[MAX_LENGTH_ALIAS];
-  double (*value)();
-  UT_hash_handle hh; /* Makes this structure hashable */
-} htable;
-
-/* Storage for metric_alias - metric_function pairs */
-static htable *callbacks_storage = NULL;
 
 typedef double (*func_ptr)();
 
 /* Initialize htable with the metrics known by the system */
 static int init()
 {
-  HASH_CLEAR(hh, callbacks_storage);
+  int retval;
 
-  for(int i = 0; i < available_metrics_no; ++i) {
-    htable *new_pair = NULL;
-    new_pair = malloc(sizeof(htable));
-
-    if (!new_pair) {
-      fprintf(stderr, "Cannnot allocate memory for the new pair\n");
-      exit(-1);
-    }
-
-    strcpy(new_pair->key, callbacks[i].alias);
-
-    new_pair->value = callbacks[i].func;
-
-    /* Insert the new pair in callbacks_storage */
-    HASH_ADD_STR(callbacks_storage, key, new_pair);
+  retval = PAPI_library_init(PAPI_VER_CURRENT);
+  if (retval != PAPI_VER_CURRENT) {
+    fprintf(stderr, "Error! PAPI_library_init %d\n",retval);
+    goto cleanup;
   }
 
   return 0;

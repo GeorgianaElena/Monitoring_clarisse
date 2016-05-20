@@ -2,13 +2,13 @@
 #define METRICS_CRAWLER_H
 
 #include "available_metrics.h"
-#include "storage.h"
 #include "stdio.h"
-#include "stdbool.h"
 
 static FILE *metrics_file;
 
 static char **desired_metrics = NULL;
+
+static int *Events = NULL;
 
 static long total_metrics = 0;
 
@@ -18,7 +18,12 @@ typedef struct _aggregators_t aggregators_t;
 
 void initialize_metrics_crawler()
 {
-  init();
+  int retval;
+
+  retval = PAPI_library_init(PAPI_VER_CURRENT);
+  if (retval != PAPI_VER_CURRENT) {
+    fprintf(stderr, "Error! PAPI_library_init %d\n",retval);
+  }
 }
 
 void initialize_metrics_crawler_number_from_file(long *nr, char* filename)
@@ -48,11 +53,14 @@ void initialize_metrics_crawler_number_from_file(long *nr, char* filename)
     }
 
     free(desired_metrics);
+    free(Events);
 
     desired_metrics = NULL;
+    Events = NULL;
   }
 
-  desired_metrics = (char **) calloc (total_metrics, sizeof(char *));
+  desired_metrics = (char **) malloc (total_metrics * sizeof(char *));
+  Events = (int *) malloc (total_metrics * sizeof(int));
 }
 
 void initialize_metrics_crawler_number_from_memory(long *nr)
@@ -62,33 +70,11 @@ void initialize_metrics_crawler_number_from_memory(long *nr)
 
 void metrics_crawler_results_memory(aggregators_t *result)
 {
-  int rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-  for(int i = 0; i < total_metrics; ++i) {
-    double (*func)();
-
-    func = get_value(desired_metrics[i]);
-
-    double metric_result = 0;
-    
-    if(!func && !rank) {
-        fprintf(stderr, "Metric \"%s\" not supported\n", desired_metrics[i]);
-    } else if(func){
-        metric_result = func();
-    }
-
-    result[i].min = metric_result;
-    result[i].max = metric_result;
-    result[i].sum = metric_result;
-  }
+  compute_metric(desired_metrics, result, Events, total_metrics);
 }
 
 int metrics_crawler_results_file(aggregators_t *result, char *filename)
 {
-  int rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
   metrics_file = fopen(filename, "r");
   if(!metrics_file) {
     perror("Error on opening metric aliases file");
@@ -120,25 +106,10 @@ int metrics_crawler_results_file(aggregators_t *result, char *filename)
 
     desired_metrics[metric_number] = strdup(line);
 
-    double (*func)();
-
-    func = get_value(line);
-
-    double metric_result = 0;
-
-    if(!func && !rank) {
-      fprintf(stderr, "Metric \"%s\" not supported\n", line);
-    } else if(func) {
-      metric_result = func();
-    }
-
-
-    result[metric_number].min = metric_result;
-    result[metric_number].max = metric_result;
-    result[metric_number].sum = metric_result;
-
     ++metric_number;
   }
+
+  compute_metric(desired_metrics, result, Events, total_metrics);
 
   fclose(metrics_file);
 
