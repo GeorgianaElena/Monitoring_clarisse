@@ -65,7 +65,7 @@ int main(int argc, char **argv)
 
     sprintf(dirname, "EVPath_results");
 
-    struct stat st = {0};
+    struct stat st = { 0 };
     if (stat(dirname, &st) == -1) {
       mkdir(dirname, S_IRWXU);
     }
@@ -101,7 +101,9 @@ int main(int argc, char **argv)
 
   /* Fork a thread to handle the network input operations of a connection manager */
   if(!is_leaf()) {
-    CMfork_comm_thread(current_state.conn_mgr);
+    if(!CMfork_comm_thread(current_state.conn_mgr)) {
+      fprintf(stderr, "Communications manager thread could not be forked\n");
+    }
   }
 
   /* Create EVPath stones and set actions */

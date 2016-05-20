@@ -132,10 +132,8 @@ static char *multi_func = "{\n\
       a = EVdata_metrics_t(i);\n\
       if(a->timestamp == counter) {\n\
         int j;\n\
-        // printf(\"sunt: %d si am primit eventul 0\\n\", a->parent_rank);\n\
         aggregated_event.metrics_nr = a->metrics_nr;\n\
         for(j = 0; j < a->metrics_nr; j++) {\n\
-          // printf(\"sunt %d si primesc %lf\\n\", a->parent_rank, a->gather_info[j].min);\n\
           aggregated_event.gather_info[j].min = a->gather_info[j].min;\n\
           aggregated_event.gather_info[j].max = a->gather_info[j].max;\n\
           aggregated_event.gather_info[j].sum = a->gather_info[j].sum;\n\
@@ -165,7 +163,6 @@ static char *multi_func = "{\n\
       if(a->timestamp == counter) {\n\
         int j;\n\
         for(j = 0; j < a->metrics_nr; j++) {\n\
-          // printf(\"sunt %d si primesc %lf\\n\", a->parent_rank, a->gather_info[j].min);\n\
           aggregated_event.gather_info[j].sum += a->gather_info[j].sum;\n\
           if(aggregated_event.gather_info[j].min > a->gather_info[j].min) {\n\
             aggregated_event.gather_info[j].min = a->gather_info[j].min;\n\
@@ -211,10 +208,8 @@ static char *multi_func = "{\n\
       a = EVdata_metrics_t(i);\n\
       if(a->timestamp == counter) {\n\
         int j;\n\
-        // printf(\"sunt: %d si am primit eventul 0\\n\", a->parent_rank);\n\
         aggregated_event.metrics_nr = a->metrics_nr;\n\
         for(j = 0; j < a->metrics_nr; j++) {\n\
-          // printf(\"sunt %d si primesc %lf\\n\", a->parent_rank, a->gather_info[j].min);\n\
           aggregated_event.gather_info[j].min = a->gather_info[j].min;\n\
           aggregated_event.gather_info[j].max = a->gather_info[j].max;\n\
           aggregated_event.gather_info[j].sum = a->gather_info[j].sum;\n\
@@ -245,7 +240,6 @@ static char *multi_func = "{\n\
       if(a->timestamp == counter) {\n\
         int j;\n\
         for(j = 0; j < a->metrics_nr; j++) {\n\
-          // printf(\"sunt %d si primesc %lf\\n\", a->parent_rank, a->gather_info[j].min);\n\
           aggregated_event.gather_info[j].sum += a->gather_info[j].sum;\n\
           if(aggregated_event.gather_info[j].min > a->gather_info[j].min) {\n\
             aggregated_event.gather_info[j].min = a->gather_info[j].min;\n\
@@ -273,105 +267,6 @@ static char *multi_func = "{\n\
     count = 0;\n\
   }\n\
 }\0\0";
-//   printf(\"In coada = %d\\n\", EVcount_metrics_t());\n\
-//   int count_timestamps = 0;\n\
-//   int event_index = 0;\n\
-//   int max_degree = -1;\n\
-//   int first_found_index = 0;\n\
-//   \n\
-//   static int counter = 0;\n\
-//   \n\
-//   metrics_t *a;\n\
-//   \n\
-//   /* Find firt metric with the desired timestamp */\n\
-//   if (EVcount_metrics_t()) {\n\
-//     int i;\n\
-//     for(i = 0; i < EVcount_metrics_t(); i++) {\n\
-//       a = EVdata_metrics_t(i);\n\
-//       if(a->timestamp == counter) {\n\
-//         max_degree = a->max_degree;\n\
-//         first_found_index = i;\n\
-//         break;\n\
-//       }\n\
-//     }\n\
-//   }\n\
-//   \n\
-//   int current_node_degree = 0;\n\
-//   int i;\n\
-//   for(i = 1; i <= max_degree; ++i) {\n\
-//     if(a->parent_rank * max_degree + i < a->nprocs) {\n\
-//       ++current_node_degree;\n\
-//     }\n\
-//   }\n\
-//   if (EVcount_metrics_t() >= current_node_degree + 1) {\n\
-//     int i;\n\
-//     \n\
-//     metrics_t c;\n\
-//     c.metrics_nr = a->metrics_nr;\n\
-//     \n\
-//     /* Find if there are enough events in the queue with the desired timestamp */\n\
-//     for(i = 0; i < EVcount_metrics_t(); i++) {\n\
-//       metrics_t *b = EVdata_metrics_t(i);\n\
-//       if(b->timestamp == counter) {\n\
-//         ++count_timestamps;\n\
-//       }\n\
-//     }\n\
-//     \n\
-//     /*If there are enough events => aggregate them */\n\
-//     if(count_timestamps == current_node_degree + 1) {\n\
-//       if(a->timestamp == counter) {\n\
-//         c.start_time = a->start_time;\n\
-//         for(i = 0; i < a->metrics_nr; i++) {\n\
-//           c.gather_info[i].min = a->gather_info[i].min;\n\
-//           c.gather_info[i].max = a->gather_info[i].max;\n\
-//           c.gather_info[i].sum = a->gather_info[i].sum;\n\
-//         }\n\
-//         c.max_degree = a->max_degree;\n\
-//         c.update_file = a->update_file;\n\
-//         c.timestamp = counter;\n\
-//         c.parent_rank = (a->parent_rank - 1) / max_degree;\n\
-//         c.nprocs = a->nprocs;\n\
-//       }\n\
-//       \n\
-//       while(event_index < EVcount_metrics_t()) {\n\
-//         if(event_index != first_found_index){\n\
-//           a = EVdata_metrics_t(event_index);\n\
-//           if(a->timestamp == counter) {\n\
-//             for(i = 0; i < a->metrics_nr; i++) {\n\
-//               c.gather_info[i].sum += a->gather_info[i].sum;\n\
-//               if(c.gather_info[i].min > a->gather_info[i].min) {\n\
-//                 c.gather_info[i].min = a->gather_info[i].min;\n\
-//               }\n\
-//               \n\
-//               if(c.gather_info[i].max < a->gather_info[i].max) {\n\
-//                 c.gather_info[i].max = a->gather_info[i].max;\n\
-//               }\n\
-//             }\n\
-//             if(a->start_time != -1 && a->start_time < c.start_time) {\n\
-//               c.start_time = a->start_time;\n\
-//             }\n\
-//           }\n\
-//         }\n\
-//         event_index++;\n\
-//       }\n\
-//       \n\
-//       /* Discard events already aggregated */\n\
-//       int i = 0;\n\
-//       while(i < EVcount_metrics_t()) {\n\
-//         metrics_t *b = EVdata_metrics_t(i);\n\
-//         if(b->timestamp == counter) {\n\
-//           EVdiscard_metrics_t(i);\n\
-//         } else {\n\
-//           i++;\n\
-//         }\n\
-//       }\n\
-//       /* submit the new, combined event */\n\
-//       ++counter;\n\
-//       EVsubmit(0, c);\n\
-//     }\n\
-//   }\n\
-// }\0\0";
-
 #endif
 
 #endif
