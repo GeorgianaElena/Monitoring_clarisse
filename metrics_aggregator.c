@@ -137,7 +137,7 @@ static int final_result(CManager cm, void *vevent, void *client_data, attr_list 
   fprintf(results, "%ld %lf\n", event->timestamp, end_time - event->start_time);
 #else
   for(int i = 0; i < event->metrics_nr; ++i) {
-    fprintf(aggregated_metrics, 
+    fprintf(aggregated_metrics,
            "-------------------------------------------"
            "-------------------------------------------\n"
            "%s    Min = %f    Max = %f    Average = %f\n",
@@ -184,7 +184,6 @@ static int compute_own_metrics(CManager cm, void *vevent, void *client_data, att
   count_timestamps[event->timestamp]++;
 
   if(count_timestamps[counter] == get_degree_node()) {
-
     EVsource source = EVcreate_submit_handle(current_state.conn_mgr, current_state.multi_stone,
                                              metrics_format_list);
 
@@ -205,7 +204,6 @@ static int compute_own_metrics(CManager cm, void *vevent, void *client_data, att
 #ifdef BENCHMARKING
     data.start_time = -1;
 #endif
-
     if(event->update_file) {
       initialize_metrics_crawler_number_from_file(&data.metrics_nr, aliases_file);
     } else {
@@ -224,6 +222,7 @@ static int compute_own_metrics(CManager cm, void *vevent, void *client_data, att
 
     ++counter;
 
+    // printf("sunt %d si submit\n", rank, data.gather_info[0].min);
     EVsubmit(source, &data, NULL);
 
     if(data.timestamp == MAX_TIMESTAMPS - 1) {
