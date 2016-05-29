@@ -91,6 +91,8 @@ int main(int argc, char **argv)
   }
 #endif
 
+  initialize_metrics_crawler();
+
   if(is_leaf()) {
     start_communication();
   } else {
@@ -113,12 +115,9 @@ void compute_and_aggregate()
 
   static int counter = 0;
 
-  initialize_metrics_crawler();
-
   metrics_t my_data;
 
   my_data.timestamp = counter;
-
 
   ++counter;
 
@@ -183,7 +182,11 @@ void compute_and_aggregate()
 #endif
     if(my_data.timestamp == MAX_TIMESTAMPS - 1) {
       printf("Process = %d stops\n", rank);
+#ifdef BENCHMARKING
       fclose(results);
+#else
+      fclose(aggregated_metrics);
+#endif
       MPI_Finalize();
 
       exit(0);
@@ -230,6 +233,7 @@ void recv_event_from_childern(metrics_t *event)
     MPI_Recv(&event->update_file, 1, MPI_INT, rank * DEGREE + i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     MPI_Recv(&event->timestamp, 1, MPI_LONG, rank * DEGREE + i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
+#ifdef BENCHMARKING
     if(i == 1) {
       MPI_Recv(&event->start_time, 1, MPI_DOUBLE, rank * DEGREE + i, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     } else {
@@ -240,6 +244,7 @@ void recv_event_from_childern(metrics_t *event)
         event->start_time = start_time;
       }
     }
+#endif
   }
 }
 
@@ -258,7 +263,9 @@ void send_event_to_parent(metrics_t *event)
 
   MPI_Send(&event->update_file, 1, MPI_INT, get_parent(), tag, MPI_COMM_WORLD);
   MPI_Send(&event->timestamp, 1, MPI_LONG, get_parent(), tag, MPI_COMM_WORLD);
+#ifdef BENCHMARKING
   MPI_Send(&event->start_time, 1, MPI_DOUBLE, get_parent(), tag, MPI_COMM_WORLD);
+#endif
 }
 
 
@@ -271,7 +278,6 @@ void start_communication()
   MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
   /* Populate the storage data stucture with the metrics known by the program so far */
-  initialize_metrics_crawler();
 
   int counter = 0;
 
