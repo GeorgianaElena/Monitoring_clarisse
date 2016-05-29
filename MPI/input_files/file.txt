@@ -1,11 +1,2 @@
-10
-rank_number
-uptime
-cpu_utilization
-memory_utilization
-rank_number
-uptime
-cpu_utilization
-memory_utilization
-rank_number
-uptime
+1
+PAPI_BR_CN
