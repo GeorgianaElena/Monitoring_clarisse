@@ -271,6 +271,10 @@ static void set_stones_actions()
 /* Final aggregated system state */
 static int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
 {
+  
+#ifdef BENCHMARKING
+  double end_time = MPI_Wtime();
+#endif
   int nprocs, rank;
   MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -284,12 +288,11 @@ static int final_result(CManager cm, void *vevent, void *client_data, attr_list 
   }
 
 #ifdef BENCHMARKING
-  double end_time = MPI_Wtime();
   prop_results[timest] = end_time - event->start_time;
   ++timest;
 #else
   for(int i = 0; i < event->metrics_nr; ++i) {
-    printf(
+    fprintf(aggregated_metrics,
            "-------------------------------------------"
            "-------------------------------------------\n"
            "%s    Min = %f    Max = %f    Average = %f\n",
@@ -342,10 +345,11 @@ static void get_metric_value(void *vevent, int counter, metrics_t *data)
 #endif
   if(event->update_file) {
     initialize_metrics_crawler_number_from_file(&data->metrics_nr, aliases_file);
-    data->gather_info = malloc(data->metrics_nr * sizeof(aggregators_t));
   } else {
     initialize_metrics_crawler_number_from_memory(&data->metrics_nr);
   }
+
+    data->gather_info = malloc(data->metrics_nr * sizeof(aggregators_t));
 
   if(event->update_file) {
     metrics_crawler_results_file(data->gather_info, aliases_file);
@@ -357,33 +361,41 @@ static void get_metric_value(void *vevent, int counter, metrics_t *data)
 /* Compute metrics for current process */
 static int compute_own_metrics(CManager cm, void *vevent, void *client_data, attr_list attrs)
 {
+  // double start = MPI_Wtime();
+  int rank, nprocs;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+
   metrics_t_ptr event = vevent;
 
   static int *count_timestamps;
-
   static int counter = 0;
-
   static int initialized = 0;
-
+  static int first_pulse = 1;
   static metrics_t data;
+  static EVsource source;
 
   if(!initialized) {
     count_timestamps = calloc(MAX_TIMESTAMPS, sizeof(int));
+    source = EVcreate_submit_handle(current_state.conn_mgr, current_state.multi_stone,
+                                    metrics_format_list);
+
     initialized = 1;
   }
+
 
   count_timestamps[event->timestamp]++;
 
   if(count_timestamps[counter] == get_degree_node()) {
 
-    EVsource source = EVcreate_submit_handle(current_state.conn_mgr, current_state.multi_stone,
-                                              metrics_format_list);
-
-    if(counter == 0) {
+    if(first_pulse || event->update_file) {
       get_metric_value(vevent, counter, &data);
+
+      first_pulse = 0;
     }
 
     EVsubmit(source, &data, NULL);
+    // printf("rank = %d update_file = %d\n", rank, data.update_file);
 
     count_timestamps[counter] = 0;
 
@@ -394,8 +406,10 @@ static int compute_own_metrics(CManager cm, void *vevent, void *client_data, att
     ++counter;
 
     get_metric_value(vevent, counter, &data);
-}
+  }
 
+  // double end = MPI_Wtime();
+  // fprintf(stderr, "%lf\n", end - start);
   return 0;
 }
 
@@ -432,9 +446,6 @@ static void *start_communication()
   EVsource source = EVcreate_submit_handle(current_state.conn_mgr, current_state.bridge_stone,
                                            metrics_format_list);
 
-  /* Populate the storage data stucture with the metrics known by the program so far */
-  // initialize_metrics_crawler();
-
   int counter = 0;
 
   metrics_t data;
@@ -464,7 +475,6 @@ static void *start_communication()
 #endif
 
   EVsubmit(source, &data, NULL);
-  // printf("sunt %d si am submis ev %d\n", rank, counter);
 
   if(data.timestamp == MAX_TIMESTAMPS - 1) {
     stop_procs();
@@ -486,6 +496,7 @@ static void *start_communication()
 
     initialize_metrics_crawler_number_from_file(&data.metrics_nr, aliases_file);
 
+    // free(data.gather_info);
     data.gather_info = malloc(data.metrics_nr * sizeof(aggregators_t));
 
     data.update_file = metrics_crawler_results_file(data.gather_info, aliases_file);

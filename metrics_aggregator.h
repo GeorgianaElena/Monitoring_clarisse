@@ -15,7 +15,7 @@
 
 #define ADDRESS_SIZE 2048
 #define MAX_FILENAME_LENGTH 100
-// #define BENCHMARKING
+#define BENCHMARKING
 
 #ifdef BENCHMARKING
 FILE *results = NULL;
@@ -225,7 +225,6 @@ start:\n\
         aggregated_event.nprocs = a->nprocs;\n\
         aggregated_event.start_time = a->start_time;\n\
         first_found_index = i;\n\
-        // printf(\"primul if : first_found_index = %d in coada: %d\\n\", first_found_index, EVcount_metrics_t());\n\
         break;\n\
       }\n\
     }\n\
@@ -259,22 +258,20 @@ start:\n\
         ++count;\n\
         \n\
         first_found_index = i;\n\
-        // printf(\"first_found_index = %d in coada: %d\\n\", first_found_index, EVcount_metrics_t());\n\
         EVdiscard_metrics_t(first_found_index);\n\
         break;\n\
       }\n\
     }\n\
   }\n\
   if (count == current_node_degree + 1) { \n\
+    // printf(\"%d %d\\n\", aggregated_event->timestamp, EVcount_metrics_t());\n\
     EVsubmit(0, aggregated_event);\n\
     pulse_timestamp = pulse_timestamp + 1;\n\
     first_found_index = -1;\n\
     count = 0;\n\
     for(i = 0; i < EVcount_metrics_t(); ++i) {\n\
-      // printf(\"i = %d\\n\", i);\n\
       a = EVdata_metrics_t(i);\n\
       if(a->timestamp == pulse_timestamp) {\n\
-        // printf(\"coada: %d pulse: %d, i = %d\\n\", EVcount_metrics_t(), pulse_timestamp, i);\n\
         goto start;\n\
       }\n\
     }\n\

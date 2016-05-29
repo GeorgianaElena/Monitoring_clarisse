@@ -50,7 +50,6 @@ void initialize_metrics_crawler_number_from_file(long *nr, char* filename)
     for(int i = 0; i < old_nr_of_metrics; ++i) {
         free(desired_metrics[i]);
         desired_metrics[i] = NULL;
-        // printf("le fac null pe %d \n", i);
     }
 
     free(desired_metrics);
