@@ -50,6 +50,7 @@ void initialize_metrics_crawler_number_from_file(long *nr, char* filename)
     for(int i = 0; i < old_nr_of_metrics; ++i) {
         free(desired_metrics[i]);
         desired_metrics[i] = NULL;
+        // printf("le fac null pe %d \n", i);
     }
 
     free(desired_metrics);
@@ -59,8 +60,9 @@ void initialize_metrics_crawler_number_from_file(long *nr, char* filename)
     Events = NULL;
   }
 
-  desired_metrics = (char **) malloc (total_metrics * sizeof(char *));
-  Events = (int *) malloc (total_metrics * sizeof(int));
+  desired_metrics = (char **) calloc (total_metrics, sizeof(char *));
+  // printf("am alocat %ld \n", total_metrics);
+  Events = (int *) calloc (total_metrics, sizeof(int));
 }
 
 void initialize_metrics_crawler_number_from_memory(long *nr)
@@ -99,6 +101,7 @@ int metrics_crawler_results_file(aggregators_t *result, char *filename)
   }
 
   while (fscanf(metrics_file, "%s\n", line) != -1 && metric_number < total_metrics) {
+    // printf("%ld\n", metric_number);
     if((number != old_nr_of_metrics) ||
        (desired_metrics[metric_number] && strcmp(desired_metrics[metric_number], line))) {
       needs_sync = true;

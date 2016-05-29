@@ -99,17 +99,12 @@ static FMStructDescList queue_list[] = {metrics_format_list, NULL};
 
 static int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs);
 static int compute_own_metrics(CManager cm, void *vevent, void *client_data, attr_list attrs);
-static int is_leaf();
-static int get_parent();
-static int get_degree_node();
+static void initialize_monitoring();
+static void set_stones_actions();
+static void *start_communication();
+static void compute_evpath_addr(char *addr);
+static void start_leaf_thread();
 
-void recv_addr_from_parent(char *addr);
-void send_addr_to_children(char *addr);
-void initialize_monitoring();
-void set_stones_actions();
-void start_listening();
-void start_communication();
-void compute_evpath_addr(char *addr);
 
 #ifndef BENCHMARKING
 static char *multi_func = "{\n\
@@ -121,16 +116,17 @@ static char *multi_func = "{\n\
   static int current_node_degree = 0;\n\
   int i;\n\
   \n\
-  static int counter = 0;\n\
+  static int pulse_timestamp = 0;\n\
   static int count = 0;\n\
   \n\
   metrics_t *a;\n\
   \n\
+start:\n\
   if (first_found_index == -1) {\n\
     count = 0;\n\
     for(i = 0; i < EVcount_metrics_t(); i++) {\n\
       a = EVdata_metrics_t(i);\n\
-      if(a->timestamp == counter) {\n\
+      if(a->timestamp == pulse_timestamp) {\n\
         int j;\n\
         aggregated_event.metrics_nr = a->metrics_nr;\n\
         for(j = 0; j < a->metrics_nr; j++) {\n\
@@ -141,7 +137,7 @@ static char *multi_func = "{\n\
         max_degree = a->max_degree;\n\
         aggregated_event.max_degree = a->max_degree;\n\
         aggregated_event.update_file = a->update_file;\n\
-        aggregated_event.timestamp = counter;\n\
+        aggregated_event.timestamp = pulse_timestamp;\n\
         aggregated_event.parent_rank = (a->parent_rank - 1) / max_degree;\n\
         aggregated_event.nprocs = a->nprocs;\n\
         first_found_index = i;\n\
@@ -160,7 +156,7 @@ static char *multi_func = "{\n\
   } else if (count < current_node_degree + 1) {\n\
     for(i = first_found_index; i < EVcount_metrics_t(); i++) {\n\
       a = EVdata_metrics_t(i);\n\
-      if(a->timestamp == counter) {\n\
+      if(a->timestamp == pulse_timestamp) {\n\
         int j;\n\
         for(j = 0; j < a->metrics_nr; j++) {\n\
           aggregated_event.gather_info[j].sum += a->gather_info[j].sum;\n\
@@ -182,9 +178,15 @@ static char *multi_func = "{\n\
   }\n\
   if (count == current_node_degree + 1) { \n\
     EVsubmit(0, aggregated_event);\n\
-    ++counter;\n\
+    ++pulse_timestamp;\n\
     first_found_index = -1;\n\
     count = 0;\n\
+    for(i = 0; i < EVcount_metrics_t(); ++i) {\n\
+      a = EVdata_metrics_t(i);\n\
+      if(a->timestamp == pulse_timestamp) {\n\
+        goto start;\n\
+      }\n\
+    }\n\
   }\n\
 }\0\0";
 #else
@@ -197,16 +199,17 @@ static char *multi_func = "{\n\
   static int current_node_degree = 0;\n\
   int i;\n\
   \n\
-  static int counter = 0;\n\
+  static int pulse_timestamp = 0;\n\
   static int count = 0;\n\
   \n\
   metrics_t *a;\n\
   \n\
+start:\n\
   if (first_found_index == -1) {\n\
     count = 0;\n\
     for(i = 0; i < EVcount_metrics_t(); i++) {\n\
       a = EVdata_metrics_t(i);\n\
-      if(a->timestamp == counter) {\n\
+      if(a->timestamp == pulse_timestamp) {\n\
         int j;\n\
         aggregated_event.metrics_nr = a->metrics_nr;\n\
         for(j = 0; j < a->metrics_nr; j++) {\n\
@@ -217,11 +220,12 @@ static char *multi_func = "{\n\
         max_degree = a->max_degree;\n\
         aggregated_event.max_degree = a->max_degree;\n\
         aggregated_event.update_file = a->update_file;\n\
-        aggregated_event.timestamp = counter;\n\
+        aggregated_event.timestamp = pulse_timestamp;\n\
         aggregated_event.parent_rank = (a->parent_rank - 1) / max_degree;\n\
         aggregated_event.nprocs = a->nprocs;\n\
         aggregated_event.start_time = a->start_time;\n\
         first_found_index = i;\n\
+        // printf(\"primul if : first_found_index = %d in coada: %d\\n\", first_found_index, EVcount_metrics_t());\n\
         break;\n\
       }\n\
     }\n\
@@ -237,7 +241,7 @@ static char *multi_func = "{\n\
   } else if (count < current_node_degree + 1) {\n\
     for(i = first_found_index; i < EVcount_metrics_t(); i++) {\n\
       a = EVdata_metrics_t(i);\n\
-      if(a->timestamp == counter) {\n\
+      if(a->timestamp == pulse_timestamp) {\n\
         int j;\n\
         for(j = 0; j < a->metrics_nr; j++) {\n\
           aggregated_event.gather_info[j].sum += a->gather_info[j].sum;\n\
@@ -255,6 +259,7 @@ static char *multi_func = "{\n\
         ++count;\n\
         \n\
         first_found_index = i;\n\
+        // printf(\"first_found_index = %d in coada: %d\\n\", first_found_index, EVcount_metrics_t());\n\
         EVdiscard_metrics_t(first_found_index);\n\
         break;\n\
       }\n\
@@ -262,9 +267,17 @@ static char *multi_func = "{\n\
   }\n\
   if (count == current_node_degree + 1) { \n\
     EVsubmit(0, aggregated_event);\n\
-    ++counter;\n\
+    pulse_timestamp = pulse_timestamp + 1;\n\
     first_found_index = -1;\n\
     count = 0;\n\
+    for(i = 0; i < EVcount_metrics_t(); ++i) {\n\
+      // printf(\"i = %d\\n\", i);\n\
+      a = EVdata_metrics_t(i);\n\
+      if(a->timestamp == pulse_timestamp) {\n\
+        // printf(\"coada: %d pulse: %d, i = %d\\n\", EVcount_metrics_t(), pulse_timestamp, i);\n\
+        goto start;\n\
+      }\n\
+    }\n\
   }\n\
 }\0\0";
 #endif

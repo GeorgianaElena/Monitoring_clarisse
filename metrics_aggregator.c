@@ -1,10 +1,14 @@
 #include "metrics_aggregator.h"
-#include "metrics_crawler.h"
 #include "helpers.h"
+#include "metrics_crawler.h"
+
+#include "pthread.h"
 #include "inttypes.h"
 #include "sys/stat.h"
 
 static node_state_t current_state;
+
+double *prop_results;
 
 int main(int argc, char **argv)
 {
@@ -94,6 +98,8 @@ int main(int argc, char **argv)
 /*----------------------------------------------------------------------------------*/
 
   /* Start initialization */
+  initialize_metrics_crawler();
+
   initialize_monitoring();
 
   /* Wait for all the processes to finish init phase */
@@ -120,149 +126,48 @@ int main(int argc, char **argv)
   /* Start aggregating metrics */
   start_communication();
 
-  MPI_Finalize();
-
   return 0;
 }
 
-/* Final aggregated system state */
-static int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
+
+static void start_leaf_thread()
 {
-  int nprocs, rank;
-  MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  pthread_t tid;
+  pthread_attr_t tattr;
+  int ret;
 
-  metrics_t_ptr event = vevent;
-
-#ifdef BENCHMARKING
-  double end_time = MPI_Wtime();
-  fprintf(results, "%ld %lf\n", event->timestamp, end_time - event->start_time);
-#else
-  for(int i = 0; i < event->metrics_nr; ++i) {
-    fprintf(aggregated_metrics,
-           "-------------------------------------------"
-           "-------------------------------------------\n"
-           "%s    Min = %f    Max = %f    Average = %f\n",
-            desired_metrics[i], event->gather_info[i].min,
-            event->gather_info[i].max, event->gather_info[i].sum / nprocs);
+  ret = pthread_attr_init(&tattr);
+  if (ret != 0) {
+    perror("Attribute init failed for leafs");
+    exit(EXIT_FAILURE);
   }
-#endif
-
-  if(event->timestamp == MAX_TIMESTAMPS - 1) {
-    printf("Process = %d stops\n", rank);
-#ifdef BENCHMARKING
-    fclose(results);
-#else
-    fclose(aggregated_metrics);
-#endif
-    MPI_Finalize();
-
-    exit(0);
+  ret = pthread_attr_setdetachstate(&tattr, PTHREAD_CREATE_DETACHED);
+  if (ret != 0) {
+    perror("Setting detached state for leafs thread failed");
+    exit(EXIT_FAILURE);
   }
-
-  return 0;
+  ret = pthread_create(&tid, &tattr, start_communication, NULL);
+  if (ret != 0) {
+      perror("Creation of leafs thread failed");
+      exit(EXIT_FAILURE);
+  }
 }
 
-/* Compute metrics for current process */
-static int compute_own_metrics(CManager cm, void *vevent, void *client_data, attr_list attrs)
+void stop_procs()
 {
-  metrics_t_ptr event = vevent;
+  PAPI_shutdown();
 
-  int rank, nprocs;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
-
-  static int *count_timestamps;
-
-  static int initialized = 0;
-
-  if(!initialized) {
-    count_timestamps = calloc(MAX_TIMESTAMPS, sizeof(int));
-    initialized = 1;
-  }
-
-  static int counter = 0;
-
-  count_timestamps[event->timestamp]++;
-
-  if(count_timestamps[counter] == get_degree_node()) {
-    EVsource source = EVcreate_submit_handle(current_state.conn_mgr, current_state.multi_stone,
-                                             metrics_format_list);
-
-    initialize_metrics_crawler();
-
-    metrics_t data;
-
-    data.max_degree = DEGREE;
-
-    data.update_file = event->update_file;
-
-    data.timestamp = counter;
-
-    data.parent_rank = get_parent();
-
-    data.nprocs = nprocs;
-
-#ifdef BENCHMARKING
-    data.start_time = -1;
-#endif
-    if(event->update_file) {
-      initialize_metrics_crawler_number_from_file(&data.metrics_nr, aliases_file);
-    } else {
-      initialize_metrics_crawler_number_from_memory(&data.metrics_nr);
-    }
-
-    data.gather_info = malloc(data.metrics_nr * sizeof(aggregators_t));
-
-    if(event->update_file) {
-      metrics_crawler_results_file(data.gather_info, aliases_file);
-    } else {
-      metrics_crawler_results_memory(data.gather_info);
-    }
-
-    count_timestamps[counter] = 0;
-
-    ++counter;
-
-    // printf("sunt %d si submit\n", rank, data.gather_info[0].min);
-    EVsubmit(source, &data, NULL);
-
-    if(data.timestamp == MAX_TIMESTAMPS - 1) {
-      printf("Process = %d stops\n", rank);
-      MPI_Finalize();
-
-      exit(0);
-    }
-
-  }
-
-  return 0;
-}
-
-/* Receive EVPath address of parent split stone through MPI */
-void recv_addr_from_parent(char *addr)
-{
   int rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
-  MPI_Recv(addr, ADDRESS_SIZE, MPI_CHAR, get_parent(), 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+  printf("Process = %d stops\n", rank);
+  MPI_Finalize();
 
-  printf("Process %d received from parent %s\n", rank, addr);
-}
-
-/* Send address to children through MPI */
-void send_addr_to_children(char *addr)
-{
-  int rank, tag = 0;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-  for(int i = 1; i <= get_degree_node(); ++i) {
-    MPI_Send(addr, ADDRESS_SIZE, MPI_CHAR, rank * DEGREE + i, tag, MPI_COMM_WORLD);
-  }
+  exit(0);
 }
 
 /* Allocate stones and compute split stone address for not leafs procs */
-void compute_evpath_addr(char *addr)
+static void compute_evpath_addr(char *addr)
 {
   int rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -291,31 +196,8 @@ void compute_evpath_addr(char *addr)
   memcpy(current_state.own_addr, addr, ADDRESS_SIZE);
 }
 
-void initialize_monitoring()
-{
-  int rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-  /* Receive evpath address from parent node */
-  if(rank != 0) {
-    char addr[ADDRESS_SIZE];
-    recv_addr_from_parent(addr);
-
-    memcpy(current_state.parent_addr, addr, ADDRESS_SIZE);
-  }
-
-  /* Compute evpath address and send to children */
-  if(!is_leaf()) {
-    char myaddr[ADDRESS_SIZE];
-
-    compute_evpath_addr(myaddr);
-
-    send_addr_to_children(myaddr);
-  }
-}
-
 /* Set stones actions */
-void set_stones_actions()
+static void set_stones_actions()
 {
   int rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -385,8 +267,163 @@ void set_stones_actions()
   }
 }
 
+
+/* Final aggregated system state */
+static int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
+{
+  int nprocs, rank;
+  MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+  metrics_t_ptr event = vevent;
+
+  static int timest = 0;
+
+  if(timest == 0) {
+    prop_results = (double *) calloc (MAX_TIMESTAMPS, sizeof(double));
+  }
+
+#ifdef BENCHMARKING
+  double end_time = MPI_Wtime();
+  prop_results[timest] = end_time - event->start_time;
+  ++timest;
+#else
+  for(int i = 0; i < event->metrics_nr; ++i) {
+    printf(
+           "-------------------------------------------"
+           "-------------------------------------------\n"
+           "%s    Min = %f    Max = %f    Average = %f\n",
+            desired_metrics[i], event->gather_info[i].min,
+            event->gather_info[i].max, event->gather_info[i].sum / nprocs);
+  }
+#endif
+
+  if(event->timestamp == MAX_TIMESTAMPS - 1 || !event->metrics_nr) {
+    printf("Process = %d stops\n", rank);
+#ifdef BENCHMARKING
+    printf("write in file the results\n");
+    for (long i = 0; i < MAX_TIMESTAMPS; ++i) {
+      fprintf(results, "%ld %lf\n", i, prop_results[i]);
+    }
+    fclose(results);
+    free(prop_results);
+#else
+    fclose(aggregated_metrics);
+#endif
+    MPI_Finalize();
+
+    exit(0);
+  }
+
+  return 0;
+}
+
+static void get_metric_value(void *vevent, int counter, metrics_t *data)
+{
+
+  int rank, nprocs;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+
+  metrics_t_ptr event = vevent;
+
+  data->max_degree = DEGREE;
+
+  data->update_file = event->update_file;
+
+  data->timestamp = counter;
+
+  data->parent_rank = get_parent();
+
+  data->nprocs = nprocs;
+
+#ifdef BENCHMARKING
+  data->start_time = -1;
+#endif
+  if(event->update_file) {
+    initialize_metrics_crawler_number_from_file(&data->metrics_nr, aliases_file);
+    data->gather_info = malloc(data->metrics_nr * sizeof(aggregators_t));
+  } else {
+    initialize_metrics_crawler_number_from_memory(&data->metrics_nr);
+  }
+
+  if(event->update_file) {
+    metrics_crawler_results_file(data->gather_info, aliases_file);
+  } else {
+    metrics_crawler_results_memory(data->gather_info);
+  }
+}
+
+/* Compute metrics for current process */
+static int compute_own_metrics(CManager cm, void *vevent, void *client_data, attr_list attrs)
+{
+  metrics_t_ptr event = vevent;
+
+  static int *count_timestamps;
+
+  static int counter = 0;
+
+  static int initialized = 0;
+
+  static metrics_t data;
+
+  if(!initialized) {
+    count_timestamps = calloc(MAX_TIMESTAMPS, sizeof(int));
+    initialized = 1;
+  }
+
+  count_timestamps[event->timestamp]++;
+
+  if(count_timestamps[counter] == get_degree_node()) {
+
+    EVsource source = EVcreate_submit_handle(current_state.conn_mgr, current_state.multi_stone,
+                                              metrics_format_list);
+
+    if(counter == 0) {
+      get_metric_value(vevent, counter, &data);
+    }
+
+    EVsubmit(source, &data, NULL);
+
+    count_timestamps[counter] = 0;
+
+    if(data.timestamp == MAX_TIMESTAMPS - 1) {
+      stop_procs();
+    }
+
+    ++counter;
+
+    get_metric_value(vevent, counter, &data);
+}
+
+  return 0;
+}
+
+static void initialize_monitoring()
+{
+  int rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+  /* Receive evpath address from parent node */
+  if(rank != 0) {
+    char addr[ADDRESS_SIZE];
+    recv_addr_from_parent(addr);
+
+    memcpy(current_state.parent_addr, addr, ADDRESS_SIZE);
+  }
+
+  /* Compute evpath address and send to children */
+  if(!is_leaf()) {
+    char myaddr[ADDRESS_SIZE];
+
+    compute_evpath_addr(myaddr);
+
+    send_addr_to_children(myaddr);
+  }
+}
+
 /* Start sending metrics value */
-void start_communication()
+static void *start_communication()
 {
   int rank, nprocs;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
@@ -396,7 +433,7 @@ void start_communication()
                                            metrics_format_list);
 
   /* Populate the storage data stucture with the metrics known by the program so far */
-  initialize_metrics_crawler();
+  // initialize_metrics_crawler();
 
   int counter = 0;
 
@@ -427,12 +464,10 @@ void start_communication()
 #endif
 
   EVsubmit(source, &data, NULL);
+  // printf("sunt %d si am submis ev %d\n", rank, counter);
 
   if(data.timestamp == MAX_TIMESTAMPS - 1) {
-    printf("Process = %d stops\n", rank);
-    MPI_Finalize();
-
-    exit(0);
+    stop_procs();
   }
 
 
@@ -456,20 +491,21 @@ void start_communication()
     data.update_file = metrics_crawler_results_file(data.gather_info, aliases_file);
 
 #ifdef BENCHMARKING
-  double start_time;
-  start_time = MPI_Wtime();
+    double start_time;
+    start_time = MPI_Wtime();
 
-  data.start_time = start_time;
+    data.start_time = start_time;
 #endif
 
-  EVsubmit(source, &data, NULL);
+    EVsubmit(source, &data, NULL);
 
-  if(data.timestamp == MAX_TIMESTAMPS - 1) {
-    printf("Process = %d stops\n", rank);
-    MPI_Finalize();
+    if(data.timestamp == MAX_TIMESTAMPS - 1) {
+      stop_procs();
+      free(data.gather_info);
+    }
 
-    exit(0);
+    free(data.gather_info);
   }
 
-  }
+  return NULL;
 }
