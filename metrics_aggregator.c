@@ -345,11 +345,10 @@ static void get_metric_value(void *vevent, int counter, metrics_t *data)
 #endif
   if(event->update_file) {
     initialize_metrics_crawler_number_from_file(&data->metrics_nr, aliases_file);
+    data->gather_info = malloc(data->metrics_nr * sizeof(aggregators_t));
   } else {
     initialize_metrics_crawler_number_from_memory(&data->metrics_nr);
   }
-
-    data->gather_info = malloc(data->metrics_nr * sizeof(aggregators_t));
 
   if(event->update_file) {
     metrics_crawler_results_file(data->gather_info, aliases_file);
@@ -361,7 +360,6 @@ static void get_metric_value(void *vevent, int counter, metrics_t *data)
 /* Compute metrics for current process */
 static int compute_own_metrics(CManager cm, void *vevent, void *client_data, attr_list attrs)
 {
-  // double start = MPI_Wtime();
   int rank, nprocs;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
@@ -395,7 +393,6 @@ static int compute_own_metrics(CManager cm, void *vevent, void *client_data, att
     }
 
     EVsubmit(source, &data, NULL);
-    // printf("rank = %d update_file = %d\n", rank, data.update_file);
 
     count_timestamps[counter] = 0;
 
@@ -408,8 +405,6 @@ static int compute_own_metrics(CManager cm, void *vevent, void *client_data, att
     get_metric_value(vevent, counter, &data);
   }
 
-  // double end = MPI_Wtime();
-  // fprintf(stderr, "%lf\n", end - start);
   return 0;
 }
 

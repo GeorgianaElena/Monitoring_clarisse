@@ -8,7 +8,7 @@ static FILE *metrics_file;
 
 static char **desired_metrics = NULL;
 
-static int *Events = NULL;
+// static int *Events = NULL;
 
 static long total_metrics = 0;
 
@@ -53,15 +53,15 @@ void initialize_metrics_crawler_number_from_file(long *nr, char* filename)
     }
 
     free(desired_metrics);
-    free(Events);
+    // free(Events);
 
     desired_metrics = NULL;
-    Events = NULL;
+    // Events = NULL;
   }
 
   desired_metrics = (char **) calloc (total_metrics, sizeof(char *));
   // printf("am alocat %ld \n", total_metrics);
-  Events = (int *) calloc (total_metrics, sizeof(int));
+  // Events = (int *) calloc (total_metrics, sizeof(int));
 }
 
 void initialize_metrics_crawler_number_from_memory(long *nr)
@@ -71,7 +71,7 @@ void initialize_metrics_crawler_number_from_memory(long *nr)
 
 void metrics_crawler_results_memory(aggregators_t *result)
 {
-  compute_metric(desired_metrics, result, Events, total_metrics);
+  compute_metric(desired_metrics, result, total_metrics, 0);
 }
 
 int metrics_crawler_results_file(aggregators_t *result, char *filename)
@@ -111,7 +111,7 @@ int metrics_crawler_results_file(aggregators_t *result, char *filename)
     ++metric_number;
   }
 
-  compute_metric(desired_metrics, result, Events, total_metrics);
+  compute_metric(desired_metrics, result, total_metrics, 1);
 
   fclose(metrics_file);
 
