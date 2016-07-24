@@ -1,39 +1,40 @@
 #ifndef STORAGE_H
 #define STORAGE_H
 
-#include "available_metrics.h"
 #include "string.h"
 #include "stdio.h"
 #include "pthread.h"
+#include "uthash.h"
 
-typedef double (*func_ptr)();
+#define MAX_LENGTH_ALIAS 100
+
+typedef struct htable{
+    char key[MAX_LENGTH_ALIAS];
+    long (*value)();
+    UT_hash_handle hh; /* makes this structure hashable */
+} htable;
+
+typedef struct _callback_t {
+  long (*func)();
+  char alias[MAX_LENGTH_ALIAS];
+} callback_t;
+
+typedef long (*func_ptr)();
 
 /* Initialize htable with the metrics known by the system */
-static int init()
-{
-  int retval;
-
-  retval = PAPI_library_init(PAPI_VER_CURRENT);
-  if (retval != PAPI_VER_CURRENT) {
-    fprintf(stderr, "Error! PAPI_library_init %d\n",retval);
-    goto cleanup;
-  }
-
-  return 0;
-}
+int init_known_metrics();
 
 /* Return function associated with metric alias */
-static func_ptr get_value(char *key)
-{
-  htable *pair = NULL;
+func_ptr get_value(char *key);
 
-  HASH_FIND_STR(callbacks_storage, key, pair);
+/*------------------------------------
+  Implement new metrics here
+  ------------------------------------
+*/
+long return_rank();
 
-  if (!pair) {
-    return NULL;
-  }
+long get_uptime();
 
-  return pair->value;
-}
+long benchmark_metric();
 
 #endif
