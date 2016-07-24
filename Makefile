@@ -2,7 +2,7 @@ CC = mpicc
 CFLAGS = -std=gnu11 -O3 -Wall -g -I ./include
 LDFLAGS = -levpath -L ./lib -latl -lffs -lcercs_env -ldill -L /usr/local/lib -lpapi
 
-MONITORING_LIB = libevptreems.so
+MONITORING_LIB = libevp_monitoring.so
 
 SRCS    = metrics_aggregator.c evp_monitoring.c helpers.c metrics_crawler.c metric_type.c storage.c
 HEADERS = metrics_aggregator.h evp_monitoring.h helpers.h metrics_crawler.h metric_type.h storage.h uthash.h
