@@ -33,7 +33,7 @@ storage.o: storage.c
 	$(CC) $(CFLAGS) -c -fPIC storage.c
 
 test: $(MONITORING_LIB)
-	$(CC) $(CFLAGS) $(TEST) -o $@ $(LDFLAGS) -L. -levptreems
+	$(CC) $(CFLAGS) $(TEST) -o $@ $(LDFLAGS) -L. -levp_monitoring
 
 # Running example
 run: test
