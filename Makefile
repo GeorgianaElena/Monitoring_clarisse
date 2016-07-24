@@ -35,5 +35,9 @@ storage.o: storage.c
 test: $(MONITORING_LIB)
 	$(CC) $(CFLAGS) $(TEST) -o $@ $(LDFLAGS) -L. -levptreems
 
+# Running example
+run: test
+	mpiexec -n 10 ./test ./input_files/file.txt 5 2 500000
+
 clean: 
 	rm -f $(MONITORING_LIB) $(OBJS) test
