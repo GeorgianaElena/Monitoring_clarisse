@@ -4,9 +4,9 @@ LDFLAGS = -levpath -L ./lib -latl -lffs -lcercs_env -ldill -L /usr/local/lib -lp
 
 MONITORING_LIB = libevptreems.so
 
-SRCS    = metrics_aggregator.c monitoring_system_interface.c helpers.c metrics_crawler.c metric_type.c storage.c
-HEADERS = metrics_aggregator.h monitoring_system_interface.h helpers.h metrics_crawler.h metric_type.h storage.h uthash.h
-OBJS    = metrics_aggregator.o monitoring_system_interface.o helpers.o metrics_crawler.o metric_type.o storage.o
+SRCS    = metrics_aggregator.c evp_monitoring.c helpers.c metrics_crawler.c metric_type.c storage.c
+HEADERS = metrics_aggregator.h evp_monitoring.h helpers.h metrics_crawler.h metric_type.h storage.h uthash.h
+OBJS    = metrics_aggregator.o evp_monitoring.o helpers.o metrics_crawler.o metric_type.o storage.o
 TEST    = test.c
 
 all: $(MONITORING_LIB)
@@ -17,8 +17,8 @@ $(MONITORING_LIB): $(OBJS)
 metrics_aggregator.o: metrics_aggregator.c
 	$(CC) $(CFLAGS) -c -fPIC metrics_aggregator.c
 
-monitoring_system_interface.o: monitoring_system_interface.c
-	$(CC) $(CFLAGS) -c -fPIC monitoring_system_interface.c
+evp_monitoring.o: evp_monitoring.c
+	$(CC) $(CFLAGS) -c -fPIC evp_monitoring.c
 
 helpers.o: helpers.c
 	$(CC) $(CFLAGS) -c -fPIC helpers.c
