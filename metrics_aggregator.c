@@ -2,14 +2,15 @@
 #include "helpers.h"
 #include "metrics_crawler.h"
 #include "cod.h"
+#include "storage.h"
 
-#include "sys/stat.h"
 #include "papi.h"
 
 #define ROOT 0
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 /*EvPath vectors*/
-///////////////////////////////////////////////////////////////////////////////////////////////////
 static FMField aggregators_field_list[] = 
 {
   {"min", "float", sizeof(long), FMOffset(aggregators_t_ptr, min)},
@@ -21,7 +22,8 @@ static FMField aggregators_field_list[] =
 static FMField metrics_field_list[] =
 {
   {"metrics_nr", "integer", sizeof(long), FMOffset(metrics_t_ptr, metrics_nr)},
-  {"gather_info", "aggregators_t[metrics_nr]", sizeof(aggregators_t), FMOffset(metrics_t_ptr, gather_info)},
+  {"gather_info", "aggregators_t[metrics_nr]", sizeof(aggregators_t), 
+    FMOffset(metrics_t_ptr, gather_info)},
   {"max_degree", "integer", sizeof(int), FMOffset(metrics_t_ptr, max_degree)},
   {"update_file", "integer", sizeof(int), FMOffset(metrics_t_ptr, update_file)},
   {"parent_rank", "integer", sizeof(int), FMOffset(metrics_t_ptr, parent_rank)},
@@ -42,10 +44,108 @@ static FMStructDescRec metrics_format_list[] =
 };
 
 static FMStructDescList queue_list[] = {metrics_format_list, NULL};
-///////////////////////////////////////////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void initialize_metrics_aggregator(metrics_aggregator_t *aggregator, char *a_f,
+                                   uint64_t ts_nr, int d, unsigned int pulse_i)
+{
+  strcpy(aggregator->aliases_file, a_f);
+#ifdef BENCHMARKING
+  aggregator->max_timestamps = ts_nr;
+ #endif
+  aggregator->max_degree = d;
+  aggregator->pulse_interval = pulse_i;
+
+  pthread_mutex_init(&aggregator->glock, NULL);
+  pthread_mutex_init(&aggregator->results_lock, NULL);
+  pthread_cond_init(&aggregator->cond_root_finished, NULL);
+  aggregator->root_finished = 0;
+
+#ifdef BENCHMARKING
+  aggregator->results = NULL;
+#else
+  aggregator->leafs_finished = 0;
+  aggregator->hash_ts = NULL;
+#endif
+
+  aggregator->metrics_file = NULL;
+  aggregator->total_metrics = 0;
+  aggregator->old_nr_of_metrics = 0;
+  aggregator->desired_metrics = NULL;
+
+#ifdef BENCHMARKING
+  aggregator->benchmarking_results = NULL;
+#else
+  aggregator->monitoring_results = NULL;
+#endif
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void destroy_metrics_aggregator(metrics_aggregator_t *aggregator)
+{
+  int rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+  /* Destroy desired_metrics */
+  if(aggregator->desired_metrics) {
+    for(int i = 0; i < aggregator->old_nr_of_metrics; ++i) {
+        free(aggregator->desired_metrics[i]);
+        aggregator->desired_metrics[i] = NULL;
+    }
+    free(aggregator->desired_metrics);
+    aggregator->desired_metrics = NULL;
+  }
+
+  /* Shutdown PAPI */
+  PAPI_shutdown();
+
+  /* Destroy stones */
+  if(!is_leaf(aggregator)) {
+    EVdestroy_stone(aggregator->current_state.conn_mgr,
+                    aggregator->current_state.multi_stone);
+    EVdestroy_stone(aggregator->current_state.conn_mgr,
+                    aggregator->current_state.split_stone);
+    EVdestroy_stone(aggregator->current_state.conn_mgr,
+                    aggregator->current_state.terminal_stone);
+    if(rank == ROOT) {
+      EVdestroy_stone(aggregator->current_state.conn_mgr,
+                      aggregator->current_state.agreg_terminal_stone);
+    }
+  }
+
+  EVdestroy_stone(aggregator->current_state.conn_mgr,
+                  aggregator->current_state.bridge_stone);
+
+  /* Destroy benchmarking / monitoring results */
+#ifdef BENCHMARKING
+  free(aggregator->benchmarking_results);
+#else
+  free(aggregator->monitoring_results);
+#endif
+
+  /* Destroy sync objects*/
+  pthread_mutex_destroy(&aggregator->glock);
+  pthread_mutex_destroy(&aggregator->results_lock);
+  pthread_cond_destroy(&aggregator->cond_root_finished);
+
+  /* Destroy hashts */
+#ifndef BENCHMARKING
+  h_timestamp_t *tmp;
+  h_timestamp_t *curr_ts;
+  HASH_ITER(hh, aggregator->hash_ts, curr_ts, tmp) {
+    HASH_DEL(aggregator->hash_ts, curr_ts);
+    free(curr_ts);
+  }
+#endif
+  free_storage();
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 void start_leaf_thread(metrics_aggregator_t *aggregator)
 {
   pthread_t tid;
@@ -66,64 +166,13 @@ void start_leaf_thread(metrics_aggregator_t *aggregator)
 
   ret = pthread_create(&tid, &tattr, start_communication, (void *)aggregator);
   if (ret != 0) {
-      perror("Creation of leafs thread failed");
-      exit(EXIT_FAILURE);
+    perror("Creation of leafs thread failed");
+    exit(EXIT_FAILURE);
   }
 }
-///////////////////////////////////////////////////////////////////////////////////////////////////
 
-void initialize_metrics_aggregator(metrics_aggregator_t *aggregator, char *a_f,  uint64_t ts_nr, int d, unsigned int pulse_i)
-{
-  strcpy(aggregator->aliases_file, a_f);
-#ifdef BENCHMARKING
-  aggregator->max_timestamps = ts_nr;
- #endif
-  aggregator->max_degree = d;
-  aggregator->pulse_interval = pulse_i;
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  pthread_mutex_init(&aggregator->glock, NULL);
-  pthread_cond_init(&aggregator->cond_root_finished, NULL);
-  aggregator->root_finished = 0;
-#ifdef BENCHMARKING
-  aggregator->results = NULL;
-#else
-  aggregator->leafs_finished = 0;
-  aggregator->hash_ts = NULL;
-#endif
-  aggregator->metrics_file = NULL;
-  aggregator->total_metrics = 0;
-  aggregator->old_nr_of_metrics = 0;
-  aggregator->desired_metrics = NULL;
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-/* To be deleted if useless*/
-void stop_procs(metrics_aggregator_t *aggregator)
-{
-  
-  int rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
-  /* Shutdown PAPI */
-  PAPI_shutdown();
-
-  /* Free stones */
-  if(!is_leaf(aggregator)) {
-    EVdestroy_stone(aggregator->current_state.conn_mgr, aggregator->current_state.multi_stone);
-    EVdestroy_stone(aggregator->current_state.conn_mgr, aggregator->current_state.split_stone);
-    EVdestroy_stone(aggregator->current_state.conn_mgr, aggregator->current_state.terminal_stone);
-    if(rank == ROOT) {
-      EVdestroy_stone(aggregator->current_state.conn_mgr, aggregator->current_state.agreg_terminal_stone);
-    }
-  }
-  EVdestroy_stone(aggregator->current_state.conn_mgr, aggregator->current_state.bridge_stone);
-
-  fprintf(stderr, "Process = %d stopped\n", rank);
-}
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
 /* Allocate stones and compute split stone address for non leafs nodes */
 void compute_evpath_addr(metrics_aggregator_t *aggregator, char *addr)
 {
@@ -151,10 +200,9 @@ void compute_evpath_addr(metrics_aggregator_t *aggregator, char *addr)
   sprintf(addr, "%d:%s", aggregator->current_state.split_stone, string_list_addr);
   memcpy(aggregator->current_state.own_addr, addr, ADDRESS_SIZE);
 }
-///////////////////////////////////////////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
 /* Set stones actions */
 void set_stones_actions(metrics_aggregator_t *aggregator)
 {
@@ -174,7 +222,8 @@ void set_stones_actions(metrics_aggregator_t *aggregator)
     EVstone output = aggregator->current_state.bridge_stone;
     char string_list[ADDRESS_SIZE];
 
-    if (sscanf(aggregator->current_state.parent_addr, "%d:%s", &remote_stone, &string_list[0]) != 2) {
+    if (sscanf(aggregator->current_state.parent_addr, "%d:%s",
+               &remote_stone, &string_list[0]) != 2) {
       printf("Bad argument \"%s\"\n", aggregator->current_state.parent_addr);
       exit(0);
     }
@@ -182,10 +231,13 @@ void set_stones_actions(metrics_aggregator_t *aggregator)
     attr_list contact_list = attr_list_from_string(string_list); 
 
     EVassoc_bridge_action(cm, output, contact_list, remote_stone);
+
     if(!is_leaf(aggregator)) {
       EVstone_set_output(cm, aggregator->current_state.multi_stone, 0, output);
     }
+
   } else {
+
     EVassoc_terminal_action(aggregator->current_state.conn_mgr, aggregator->current_state.agreg_terminal_stone,
                             metrics_format_list, final_result, (void *) aggregator);
 
@@ -202,7 +254,7 @@ void set_stones_actions(metrics_aggregator_t *aggregator)
     terminal_stone = aggregator->current_state.terminal_stone;
 
     EVassoc_terminal_action(aggregator->current_state.conn_mgr, terminal_stone,
-                          metrics_format_list, compute_own_metrics, (void *) aggregator);
+                            metrics_format_list, compute_own_metrics, (void *) aggregator);
 
     EVaction split_action = EVassoc_split_action(cm, aggregator->current_state.split_stone, NULL);
 
@@ -216,10 +268,9 @@ void set_stones_actions(metrics_aggregator_t *aggregator)
     EVassoc_multi_action(aggregator->current_state.conn_mgr, aggregator->current_state.multi_stone, mq, NULL);
   }
 }
-///////////////////////////////////////////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
 /* Final aggregated system state */
 int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
 {
@@ -244,38 +295,30 @@ int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
   aggregator->benchmarking_results[pulse] = end_time - event->start_time;
 #else
   if(pulse == 0) {
-    aggregator->monitoring_results = (aggregators_t *) calloc (event->metrics_nr, sizeof(aggregators_t));
+    pthread_mutex_lock(&aggregator->results_lock);
+    aggregator->monitoring_results = (sys_metric_t *) calloc (event->metrics_nr, sizeof(sys_metric_t));
+    pthread_mutex_unlock(&aggregator->results_lock);
   } else if (event->update_file) {
+    pthread_mutex_lock(&aggregator->results_lock);
     free(aggregator->monitoring_results);
-    aggregator->monitoring_results = (aggregators_t *) calloc(event->metrics_nr, sizeof(aggregators_t));
+    aggregator->monitoring_results = (sys_metric_t *) calloc(event->metrics_nr, sizeof(sys_metric_t));
+    pthread_mutex_unlock(&aggregator->results_lock);
   }
 
+  pthread_mutex_lock(&aggregator->results_lock);
   for(int i = 0; i < event->metrics_nr; ++i) {
     aggregator->monitoring_results[i].min = event->gather_info[i].min;
     aggregator->monitoring_results[i].max = event->gather_info[i].max;
-    aggregator->monitoring_results[i].sum = event->gather_info[i].sum / nprocs;
+    aggregator->monitoring_results[i].avg = (double) event->gather_info[i].sum / nprocs;
   }
+  pthread_mutex_unlock(&aggregator->results_lock);
 #endif
-
-/* To be deleted (debug purpose) */
-  for(int i = 0; i < event->metrics_nr; ++i) {
-    fprintf(stderr,
-           "-------------------------------------------"
-           "-------------------------------------------\n"
-           "Min = %ld    Max = %ld    Average = %ld\n",
-            event->gather_info[i].min,
-            event->gather_info[i].max, event->gather_info[i].sum);
-  }
-
-  /* To be deleted (debug purpose) */
-  fprintf(stderr, "quit: %d\n", event->quit);
 
   ++pulse;
 
   if(procs_done || event->quit || !event->metrics_nr) {
 #ifdef BENCHMARKING
-    printf("Process = %d stopped\n", rank);
-    printf("write in file the results\n");
+    printf("Writing in file benchmarking results\n");
 
     for (long i = 0; i < aggregator->max_timestamps; ++i) {
       fprintf(aggregator->results, "%ld %ld\n", i, aggregator->benchmarking_results[i]);
@@ -293,10 +336,9 @@ int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
 
   return 0;
 }
-///////////////////////////////////////////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
 /* Compute metrics values */
 void get_metrics_values(metrics_aggregator_t *aggregator, void *vevent, int counter, metrics_t *data)
 {
@@ -331,10 +373,9 @@ void get_metrics_values(metrics_aggregator_t *aggregator, void *vevent, int coun
     metrics_crawler_results_memory(aggregator, data->gather_info);
   }
 }
-///////////////////////////////////////////////////////////////////////////////////////////////////
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
-///////////////////////////////////////////////////////////////////////////////////////////////////
 /* Compute metrics for current node and submit them to the multistone located on same node */
 int compute_own_metrics(CManager cm, void *vevent, void *client_data, attr_list attrs)
 {
@@ -411,7 +452,8 @@ int compute_own_metrics(CManager cm, void *vevent, void *client_data, attr_list 
 
   return 0;
 }
-///////////////////////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /* Start propagating metrics values up through the tree topology */
 void *start_communication(void *aggregator)
@@ -482,3 +524,5 @@ void *start_communication(void *aggregator)
 
   return NULL;
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////

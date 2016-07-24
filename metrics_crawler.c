@@ -1,14 +1,16 @@
-#include "metrics_aggregator.h"
 #include "metrics_crawler.h"
+#include "metrics_aggregator.h"
 #include "metric_type.h"
 #include "storage.h"
 
-#include "stdio.h"
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void initialize_metrics_crawler()
 {
   init_known_metrics();
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void initialize_metrics_crawler_number_from_file(metrics_aggregator_t *aggregator, long *nr, char* filename)
 {
@@ -44,15 +46,21 @@ void initialize_metrics_crawler_number_from_file(metrics_aggregator_t *aggregato
   aggregator->desired_metrics = (char **) calloc (aggregator->total_metrics, sizeof(char *));
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 void initialize_metrics_crawler_number_from_memory(metrics_aggregator_t *aggregator, long *nr)
 {
   *nr = aggregator->total_metrics;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 void metrics_crawler_results_memory(metrics_aggregator_t *aggregator, aggregators_t *result)
 {
   compute_metric(aggregator->desired_metrics, result, aggregator->total_metrics, 0);
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 int metrics_crawler_results_file(metrics_aggregator_t *aggregator, aggregators_t *result, char *filename)
 {
@@ -79,10 +87,11 @@ int metrics_crawler_results_file(metrics_aggregator_t *aggregator, aggregators_t
     exit(-1);
   }
 
-  while (fscanf(aggregator->metrics_file, "%s\n", line) != -1 && metric_number < aggregator->total_metrics) {
-    // printf("%ld\n", metric_number);
+  while (fscanf(aggregator->metrics_file, "%s\n", line) != -1 &&
+         metric_number < aggregator->total_metrics) {
     if((number != aggregator->old_nr_of_metrics) ||
-       (aggregator->desired_metrics[metric_number] && strcmp(aggregator->desired_metrics[metric_number], line))) {
+       (aggregator->desired_metrics[metric_number] &&
+        strcmp(aggregator->desired_metrics[metric_number], line))) {
       needs_sync = true;
     }
 
@@ -97,3 +106,5 @@ int metrics_crawler_results_file(metrics_aggregator_t *aggregator, aggregators_t
 
   return needs_sync;
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////

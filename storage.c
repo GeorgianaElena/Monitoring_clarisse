@@ -1,14 +1,11 @@
 #include "storage.h"
 
-#include "string.h"
-#include "stdio.h"
-#include "pthread.h"
 #include "uthash.h"
 #include "papi.h"
 #include "mpi.h"
 #include "sys/user.h"
 
-int available_metrics_no = 3;
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 const callback_t callbacks[] = 
 {
@@ -17,8 +14,12 @@ const callback_t callbacks[] =
   {benchmark_metric, "test"  }
 };
 
+int available_metrics_no = 3;
+
 /* Storage for alias - custom functions pairs*/
 htable *callbacks_storage = NULL;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /* Initialize htable with the metrics known by the system */
 int init_known_metrics()
@@ -43,7 +44,7 @@ int init_known_metrics()
     if (!new_pair) {
         fprintf(stderr, "can't alloc memory for the new pair\n");
         exit(-1);
-    }   
+    }
 
     strcpy(new_pair->key, callbacks[i].alias);
     new_pair->value = callbacks[i].func;
@@ -55,24 +56,37 @@ int init_known_metrics()
   return 0;
 }
 
+void free_storage()
+{
+  htable *tmp;
+  htable *curr;
+  HASH_ITER(hh, callbacks_storage, curr, tmp) {
+    HASH_DEL(callbacks_storage, curr);
+    free(curr);
+  }
+}
+
 /* Return function associated with metric alias */
 func_ptr get_value(char *key)
 {
-    htable *pair = NULL;
+  htable *pair = NULL;
 
-    HASH_FIND_STR(callbacks_storage, key, pair);
+  HASH_FIND_STR(callbacks_storage, key, pair);
 
-    if (!pair) {
-        return(NULL);
-    }
+  if (!pair) {
+      return(NULL);
+  }
 
-    return pair->value;
+  return pair->value;
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /*------------------------------------
   Implement new metrics here
   ------------------------------------
 */
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 long return_rank()
 {
@@ -103,3 +117,5 @@ long benchmark_metric()
 {
   return 1;
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////

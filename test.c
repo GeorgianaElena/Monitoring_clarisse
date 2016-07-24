@@ -1,6 +1,7 @@
+#include "evp_monitoring.h"
+
 #include "stdio.h"
 #include "stdlib.h"
-#include "monitoring_system_interface.h"
 #include "mpi.h"
 #include "string.h"
 
@@ -14,7 +15,7 @@ int main(int argc, char **argv)
 
   MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
 
-// ///////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////
 
   if (argc < 5) {
 
@@ -54,16 +55,30 @@ int main(int argc, char **argv)
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
   evp_monitoring_t mon;
-  // memset(&mon, 0, sizeof(evp_monitoring_t));
 
   monitoring_initialize(&mon, a_f, ts_nr, d, pulse_i);
 
   /* Here could run the program to monitor */
-  sleep(14);
+  sleep(1);
+
+#ifndef BENCHMARKING
+  sys_metric_t *res = (sys_metric_t *) calloc (4, sizeof(sys_metric_t));
+
+  if(rank == 0) {
+    return_results(&mon, res);
+    for(int i = 0; i < 4; ++i) {
+      printf("min = %ld ", res[i].min);
+      printf("max = %ld ", res[i].max);
+      printf("avg = %lf\n", res[i].avg);
+    }
+  }
+#endif
+
+  sleep(2);
 
   monitoring_finalize(&mon);
 
   MPI_Finalize();
-  // stop_procs();
+
   return 0;
 }

@@ -3,21 +3,21 @@
 
 #include "mpi.h"
 #include "stdio.h"
-#include "stdlib.h"
 #include "sys/stat.h"
 #include "sys/types.h"
 #include "inttypes.h"
-#include "fcntl.h"
 #include "unistd.h"
 #include "evpath.h"
 #include "stdbool.h"
-#include "stdint.h"
 #include "uthash.h"
-
 #include "pthread.h"
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #define MAX_FILENAME_LENGTH 100
 #define ADDRESS_SIZE 2048
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #ifndef BENCHMARKING
 typedef struct
@@ -28,7 +28,10 @@ typedef struct
 } h_timestamp_t;
 #endif
 
-typedef struct _node_state_t{
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+typedef struct _node_state_t
+{
   char parent_addr[ADDRESS_SIZE];
   char own_addr[ADDRESS_SIZE];
 
@@ -43,13 +46,28 @@ typedef struct _node_state_t{
   CManager conn_mgr;
 } node_state_t;
 
-typedef struct _aggregators_t{
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+typedef struct _aggregators_t
+{
   long min;
   long max;
   long sum;
 } aggregators_t, *aggregators_t_ptr;
 
-typedef struct _metrics_t{
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+typedef struct _sys_metric_t
+{
+  long min;
+  long max;
+  double avg;
+} sys_metric_t;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+typedef struct _metrics_t
+{
   long metrics_nr;
   aggregators_t *gather_info;
   int max_degree;
@@ -62,6 +80,8 @@ typedef struct _metrics_t{
   long start_time;
 #endif
 } metrics_t, *metrics_t_ptr;
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 typedef struct _metrics_aggregator_t
 {
@@ -85,11 +105,14 @@ typedef struct _metrics_aggregator_t
 
   node_state_t current_state;
 
+#ifdef BENCHMARKING
   long *benchmarking_results;
-
-  aggregators_t *monitoring_results;
+#else
+  sys_metric_t *monitoring_results;
+#endif
 
   pthread_mutex_t glock;
+  pthread_mutex_t results_lock;
   pthread_cond_t cond_root_finished;
   uint8_t root_finished;
 
@@ -99,11 +122,13 @@ typedef struct _metrics_aggregator_t
   uint8_t leafs_finished;
   h_timestamp_t *hash_ts;
 #endif
-
   MPI_Comm comm_leafs;
 } metrics_aggregator_t;
 
-void initialize_metrics_aggregator(metrics_aggregator_t *aggregator, char *a_f, uint64_t ts_nr, int d, unsigned int pulse_i);
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+void initialize_metrics_aggregator(metrics_aggregator_t *aggregator, char *a_f, uint64_t ts_nr,
+                                   int d, unsigned int pulse_i);
 void destroy_metrics_aggregator(metrics_aggregator_t *aggregator);
 
 int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs);
@@ -112,7 +137,6 @@ void set_stones_actions(metrics_aggregator_t *aggregator);
 void *start_communication(void *aggregator);
 void compute_evpath_addr(metrics_aggregator_t *aggregator, char *addr);
 void start_leaf_thread(metrics_aggregator_t *aggregator);
-// void monitoring_get_metrics();
-void stop_procs(metrics_aggregator_t *aggregator);
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
 #endif

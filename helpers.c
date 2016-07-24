@@ -1,9 +1,13 @@
 #include "helpers.h"
-
-#include "mpi.h"
 #include "metrics_aggregator.h"
 
+#include "mpi.h"
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 #define ADDRESS_SIZE 2048
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 int is_leaf(metrics_aggregator_t *aggregator)
 {
@@ -16,6 +20,8 @@ int is_leaf(metrics_aggregator_t *aggregator)
   return ((rank * aggregator->max_degree + 1 >= nprocs) && (nprocs > 1)); 
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 /* Get parent rank in current topology */
 int get_parent(metrics_aggregator_t *aggregator)
 {
@@ -27,6 +33,8 @@ int get_parent(metrics_aggregator_t *aggregator)
 
   return (rank - 1) / aggregator->max_degree;
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 int get_degree_node(metrics_aggregator_t *aggregator)
 {
@@ -47,6 +55,8 @@ int get_degree_node(metrics_aggregator_t *aggregator)
   return degree;
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 /* Receive EVPath address of parent split stone through MPI */
 void recv_addr_from_parent(metrics_aggregator_t *aggregator, char *addr)
 {
@@ -54,9 +64,9 @@ void recv_addr_from_parent(metrics_aggregator_t *aggregator, char *addr)
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
   MPI_Recv(addr, ADDRESS_SIZE, MPI_CHAR, get_parent(aggregator), 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-  printf("Process %d received from parent %s\n", rank, addr);
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /* Send address to children through MPI */
 void send_addr_to_children(metrics_aggregator_t *aggregator, char *addr)
@@ -68,3 +78,5 @@ void send_addr_to_children(metrics_aggregator_t *aggregator, char *addr)
     MPI_Send(addr, ADDRESS_SIZE, MPI_CHAR, rank * aggregator->max_degree + i, tag, MPI_COMM_WORLD);
   }
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////

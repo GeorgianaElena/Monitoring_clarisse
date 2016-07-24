@@ -1,17 +1,20 @@
-#include "metric_type.h"
 #include "metrics_aggregator.h"
 #include "storage.h"
 
-#include "stdio.h"
 #include "papi.h"
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
 
 int *Events = NULL;
 
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
 void realloc_papi_events(int size)
 {
-  // if(Events != NULL) {
-  //   free(Events);
-  // }
+  if(Events != NULL) {
+    free(Events);
+  }
+
   Events = malloc(size * sizeof(int));
 }
 
@@ -55,3 +58,5 @@ void compute_metric(char** metric_names, aggregators_t *values, int size, int up
     values[i].sum = (long) value;
   }
 }
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
