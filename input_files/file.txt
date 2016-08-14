@@ -1,5 +1,2 @@
-4
+1
 rank
-PAPI_BR_CN
-uptime
-test
