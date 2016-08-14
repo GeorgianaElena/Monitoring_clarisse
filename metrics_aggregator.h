@@ -12,6 +12,8 @@
 #include "uthash.h"
 #include "pthread.h"
 
+#include "maggs_types.h"
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 #define MAX_FILENAME_LENGTH 100
@@ -54,15 +56,6 @@ typedef struct _aggregators_t
   long max;
   long sum;
 } aggregators_t, *aggregators_t_ptr;
-
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-typedef struct _sys_metric_t
-{
-  long min;
-  long max;
-  double avg;
-} sys_metric_t;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -112,9 +105,12 @@ typedef struct _metrics_aggregator_t
 #endif
 
   pthread_mutex_t glock;
-  pthread_mutex_t results_lock;
   pthread_cond_t cond_root_finished;
   uint8_t root_finished;
+  
+  pthread_cond_t results_cond;
+  pthread_mutex_t results_lock;
+  uint8_t results_available;
 
 #ifdef BENCHMARKING
   FILE *results;

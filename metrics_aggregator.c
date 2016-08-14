@@ -47,8 +47,6 @@ static FMStructDescList queue_list[] = {metrics_format_list, NULL};
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
 void initialize_metrics_aggregator(metrics_aggregator_t *aggregator, char *a_f,
                                    uint64_t ts_nr, int d, unsigned int pulse_i)
 {
@@ -62,6 +60,8 @@ void initialize_metrics_aggregator(metrics_aggregator_t *aggregator, char *a_f,
   pthread_mutex_init(&aggregator->glock, NULL);
   pthread_mutex_init(&aggregator->results_lock, NULL);
   pthread_cond_init(&aggregator->cond_root_finished, NULL);
+  pthread_cond_init(&aggregator->results_cond, NULL);
+  aggregator->results_available = 0;
   aggregator->root_finished = 0;
 
 #ifdef BENCHMARKING
@@ -280,7 +280,7 @@ int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
 
   metrics_t_ptr event = vevent;
   int procs_done = 0;
-  int pulse = 0;
+  static int pulse = 0;
 
   metrics_aggregator_t *aggregator = (metrics_aggregator_t *) client_data;
 
@@ -294,22 +294,23 @@ int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
 
   aggregator->benchmarking_results[pulse] = end_time - event->start_time;
 #else
+  pthread_mutex_lock(&aggregator->results_lock);
   if(pulse == 0) {
-    pthread_mutex_lock(&aggregator->results_lock);
     aggregator->monitoring_results = (sys_metric_t *) calloc (event->metrics_nr, sizeof(sys_metric_t));
-    pthread_mutex_unlock(&aggregator->results_lock);
   } else if (event->update_file) {
-    pthread_mutex_lock(&aggregator->results_lock);
     free(aggregator->monitoring_results);
     aggregator->monitoring_results = (sys_metric_t *) calloc(event->metrics_nr, sizeof(sys_metric_t));
-    pthread_mutex_unlock(&aggregator->results_lock);
   }
 
-  pthread_mutex_lock(&aggregator->results_lock);
   for(int i = 0; i < event->metrics_nr; ++i) {
     aggregator->monitoring_results[i].min = event->gather_info[i].min;
     aggregator->monitoring_results[i].max = event->gather_info[i].max;
     aggregator->monitoring_results[i].avg = (double) event->gather_info[i].sum / nprocs;
+  }
+
+  if (pulse == 0 || event->update_file) {
+    aggregator->results_available = 1;
+    pthread_cond_signal(&aggregator->results_cond);
   }
   pthread_mutex_unlock(&aggregator->results_lock);
 #endif
@@ -460,9 +461,12 @@ void *start_communication(void *aggregator)
 {
   metrics_aggregator_t *agg = (metrics_aggregator_t *) aggregator;
 
-  int rank, nprocs;
+  int rank, leaf_rank, nleafs, nprocs;
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
   MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+  MPI_Comm_rank(agg->comm_leafs, &leaf_rank);
+  MPI_Comm_size(agg->comm_leafs, &nleafs);
+
 
   EVsource source = EVcreate_submit_handle(agg->current_state.conn_mgr, agg->current_state.bridge_stone,
                                            metrics_format_list);
@@ -481,6 +485,7 @@ void *start_communication(void *aggregator)
 
   /* Send data periodically with different timestamps */
   while (!data.quit) {
+  MPI_Barrier(agg->comm_leafs);
 #ifdef BENCHMARKING
     if (counter == agg->max_timestamps - 1) {
       data.quit = 1;
@@ -493,6 +498,17 @@ void *start_communication(void *aggregator)
       data.quit = 0;
     }
     pthread_mutex_unlock(&agg->glock);
+
+    /* Avoid race condition by electing the price value of data.quit across
+     * all leaf processes */
+    int i, elected_quit_value = 0;
+    for (i = 0; i < nleafs; ++i) {
+      MPI_Reduce(&data.quit, &elected_quit_value, 1, MPI_INT, MPI_BOR, i, agg->comm_leafs);
+      if (leaf_rank == i) {
+        data.quit = elected_quit_value;
+      }
+      MPI_Barrier(agg->comm_leafs);
+    }
 #endif
 
     data.timestamp = counter;
@@ -512,7 +528,6 @@ void *start_communication(void *aggregator)
     start_time = MPI_Wtime();
     data.start_time = start_time;
 #endif
-
     EVsubmit(source, &data, NULL);
 
     free(data.gather_info);

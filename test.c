@@ -59,23 +59,21 @@ int main(int argc, char **argv)
   monitoring_initialize(&mon, a_f, ts_nr, d, pulse_i);
 
   /* Here could run the program to monitor */
-  sleep(1);
+  usleep(100);
 
 #ifndef BENCHMARKING
   int num_metrics_file_txt = 1;
   sys_metric_t *res = (sys_metric_t *) calloc (num_metrics_file_txt, sizeof(sys_metric_t));
 
-  if(rank == 0) {
-    return_results(&mon, res);
-    for(int i = 0; i < num_metrics_file_txt; ++i) {
-      printf("min = %ld ", res[i].min);
-      printf("max = %ld ", res[i].max);
-      printf("avg = %lf\n", res[i].avg);
-    }
-  }
+ if(rank == 0) {
+   return_results(&mon, res);
+   for(int i = 0; i < num_metrics_file_txt; ++i) {
+     printf("min = %ld ", res[i].min);
+     printf("max = %ld ", res[i].max);
+     printf("avg = %lf\n", res[i].avg);
+   }
+ }
 #endif
-
-  sleep(2);
 
   monitoring_finalize(&mon);
 

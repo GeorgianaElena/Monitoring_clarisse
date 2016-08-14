@@ -1,6 +1,5 @@
 #include "storage.h"
 
-#include "uthash.h"
 #include "papi.h"
 #include "mpi.h"
 #include "sys/user.h"
