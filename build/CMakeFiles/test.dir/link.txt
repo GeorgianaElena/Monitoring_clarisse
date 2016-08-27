@@ -1,1 +1,0 @@
-/usr/bin/mpicc   -fPIC -std=gnu11   CMakeFiles/test.dir/test.c.o  -o test -dynamic libevp_monitoring.a -lpapi ../lib/libevpath.so ../lib/libffs.so ../lib/libdill.so ../lib/libatl.so ../lib/libcercs_env.so -Wl,-rpath,/home/georgiana/clarisse/evpath/Monitoring_clarisse_shared_lib/lib 

@@ -153,7 +153,7 @@ start:\n\
             aggregated_event.gather_info[j].max = a->gather_info[j].max;\n\
           }\n\
           // TODO: out of for\n\
-          if(a->start_time != -1 && a->start_time < aggregated_event.start_time) {\n\
+          if(a->start_time != -1 && (aggregated_event.start_time - a->start_time) > 0.0) {\n\
               aggregated_event.start_time = a->start_time;\n\
           }\n\
         }\n\

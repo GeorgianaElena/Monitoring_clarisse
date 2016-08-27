@@ -1,5 +1,5 @@
 CC = mpicc
-CFLAGS = -std=gnu11 -O3 -Wall -g -I ./include
+CFLAGS = -std=gnu11 -O3 -Wall -g -I ./include -D BENCHMARKING
 LDFLAGS = -levpath -L ./lib -latl -lffs -lcercs_env -ldill -L /usr/local/lib -lpapi
 
 MONITORING_LIB = libmaggs.so
@@ -8,6 +8,7 @@ SRCS    = metrics_aggregator.c evp_monitoring.c helpers.c metrics_crawler.c metr
 HEADERS = metrics_aggregator.h evp_monitoring.h helpers.h metrics_crawler.h metric_type.h storage.h uthash.h
 OBJS    = metrics_aggregator.o evp_monitoring.o helpers.o metrics_crawler.o metric_type.o storage.o
 TEST    = test.c
+TEST2    = test_updated_metrics_file.c
 
 all: $(MONITORING_LIB)
 
@@ -35,9 +36,12 @@ storage.o: storage.c
 test: $(MONITORING_LIB)
 	$(CC) $(CFLAGS) $(TEST) -o $@ $(LDFLAGS) -L. -lmaggs
 
+test2: $(MONITORING_LIB)
+	$(CC) $(CFLAGS) $(TEST) -o $@ $(LDFLAGS) -L. -lmaggs
+
 # Running example
 run: test
 	mpiexec -n 10 ./test ./input_files/file.txt 5 2 500000
 
 clean: 
-	rm -f $(MONITORING_LIB) $(OBJS) test
+	rm -f $(MONITORING_LIB) $(OBJS) test test2
