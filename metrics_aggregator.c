@@ -290,7 +290,6 @@ int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
   if(pulse == 0) {
     aggregator->benchmarking_results = (double *) calloc (aggregator->max_timestamps, sizeof(double));
   }
-
   double end_time = MPI_Wtime();
   aggregator->benchmarking_results[pulse] = end_time - event->start_time;
 #else

@@ -52,9 +52,9 @@ typedef struct _node_state_t
 
 typedef struct _aggregators_t
 {
-  long min;
-  long max;
-  long sum;
+  double min;
+  double max;
+  double sum;
 } aggregators_t, *aggregators_t_ptr;
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
