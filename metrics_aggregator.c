@@ -293,7 +293,6 @@ int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
 
   double end_time = MPI_Wtime();
   aggregator->benchmarking_results[pulse] = end_time - event->start_time;
-  fprintf(stderr, "end %lf - start %lf = %lf\n", end_time, event->start_time, aggregator->benchmarking_results[pulse]);
 #else
   pthread_mutex_lock(&aggregator->results_lock);
   if(pulse == 0) {
