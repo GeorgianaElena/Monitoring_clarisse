@@ -135,8 +135,6 @@ void monitoring_finalize(evp_monitoring_t *mon)
   }
 
   /* Wait for all the nodes to finish*/
-
-  fprintf(stderr, "proc %d finised\n", rank);
   MPI_Barrier(MPI_COMM_WORLD);
 
   MPI_Comm_free(&mon->aggregator->comm_leafs);
