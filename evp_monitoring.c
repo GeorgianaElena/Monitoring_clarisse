@@ -130,11 +130,11 @@ void monitoring_finalize(evp_monitoring_t *mon)
     while (!mon->aggregator->root_finished) {
       pthread_cond_wait(&mon->aggregator->cond_root_finished, &mon->aggregator->glock);
     }
+    // fprintf(stderr, "rank = %d\n", rank);
     pthread_mutex_unlock(&mon->aggregator->glock);
   }
 
   /* Wait for all the nodes to finish*/
-
   MPI_Barrier(MPI_COMM_WORLD);
 
   MPI_Comm_free(&mon->aggregator->comm_leafs);

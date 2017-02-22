@@ -70,7 +70,7 @@ typedef struct _metrics_t
   long timestamp;
   int quit;
 #ifdef BENCHMARKING
-  long start_time;
+  double start_time;
 #endif
 } metrics_t, *metrics_t_ptr;
 
@@ -99,7 +99,7 @@ typedef struct _metrics_aggregator_t
   node_state_t current_state;
 
 #ifdef BENCHMARKING
-  long *benchmarking_results;
+  double *benchmarking_results;
 #else
   sys_metric_t *monitoring_results;
 #endif

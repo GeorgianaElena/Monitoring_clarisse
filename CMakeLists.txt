@@ -37,7 +37,7 @@ add_definitions(-D_LARGEFILE64_SOURCE)
 #option(CLARISSE_TIMING "Use CLARISSE_TIMING" OFF)
 
 #if (CLARISSE_TIMING)
-#  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DCLARISSE_TIMING")
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DBENCHMARKING")
 #endif ()
  
 include_directories (include)

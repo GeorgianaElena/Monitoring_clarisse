@@ -1,2 +1,0 @@
-/home/georgiana/clarisse/evpath/Monitoring_clarisse_shared_lib/build/CMakeFiles/evp_monitoring.dir
-/home/georgiana/clarisse/evpath/Monitoring_clarisse_shared_lib/build/CMakeFiles/test.dir

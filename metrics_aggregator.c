@@ -31,7 +31,7 @@ static FMField metrics_field_list[] =
   {"timestamp", "integer", sizeof(long), FMOffset(metrics_t_ptr, timestamp)},
   {"quit", "integer", sizeof(int), FMOffset(metrics_t_ptr, quit)},
 #ifdef BENCHMARKING
-  {"start_time", "float", sizeof(long), FMOffset(metrics_t_ptr, start_time)},
+  {"start_time", "float", sizeof(double), FMOffset(metrics_t_ptr, start_time)},
 #endif
   {NULL, NULL}
 };
@@ -122,7 +122,7 @@ void destroy_metrics_aggregator(metrics_aggregator_t *aggregator)
 
   /* Destroy benchmarking / monitoring results */
 #ifdef BENCHMARKING
-  free(aggregator->benchmarking_results);
+//  free(aggregator->benchmarking_results);
 #else
   free(aggregator->monitoring_results);
 #endif
@@ -285,13 +285,12 @@ int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
   metrics_aggregator_t *aggregator = (metrics_aggregator_t *) client_data;
 
 #ifdef BENCHMARKING
-  double end_time = MPI_Wtime();
   procs_done = (event->timestamp == (aggregator->max_timestamps - 1));
 
   if(pulse == 0) {
-    aggregator->benchmarking_results = (long *) calloc (aggregator->max_timestamps, sizeof(long));
+    aggregator->benchmarking_results = (double *) calloc (aggregator->max_timestamps, sizeof(double));
   }
-
+  double end_time = MPI_Wtime();
   aggregator->benchmarking_results[pulse] = end_time - event->start_time;
 #else
   pthread_mutex_lock(&aggregator->results_lock);
@@ -322,7 +321,7 @@ int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
     printf("Writing in file benchmarking results\n");
 
     for (long i = 0; i < aggregator->max_timestamps; ++i) {
-      fprintf(aggregator->results, "%ld %ld\n", i, aggregator->benchmarking_results[i]);
+      fprintf(aggregator->results, "%ld %lf\n", i, aggregator->benchmarking_results[i]);
     }
 
     fclose(aggregator->results);
