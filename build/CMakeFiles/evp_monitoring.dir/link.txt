@@ -1,0 +1,2 @@
+/usr/bin/ar cq libevp_monitoring.a  CMakeFiles/evp_monitoring.dir/metrics_aggregator.c.o CMakeFiles/evp_monitoring.dir/evp_monitoring.c.o CMakeFiles/evp_monitoring.dir/helpers.c.o CMakeFiles/evp_monitoring.dir/metrics_crawler.c.o CMakeFiles/evp_monitoring.dir/metric_type.c.o CMakeFiles/evp_monitoring.dir/storage.c.o
+/usr/bin/ranlib libevp_monitoring.a
