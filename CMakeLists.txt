@@ -52,7 +52,7 @@ add_definitions(-D_LARGEFILE64_SOURCE)
 #endif ()
  
 include_directories (include)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC -std=gnu11") 
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC -std=gnu11 -g") 
 #add library
 set(CMAKE_SHARED_LIBRARY_LINK_C_FLAGS "-dynamic")
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}")
