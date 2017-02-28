@@ -1,0 +1,20 @@
+#!/bin/bash --login
+
+#PBS -N hello
+#PBS -l select=8
+#PBS -l walltime=0:2:0
+#PBS -A pr1u1352
+
+export NODES=8
+export ARCHER_CORES_PER_NODE=24 #8   #12 #11 #3 #24
+export NPROCS=$((ARCHER_CORES_PER_NODE*NODES))
+export METRICS_FILE="input_files/file2_nopapi.txt"
+export EVENTS=10
+export TREE_DEGREE=2
+export INTERVAL=100 #ms
+
+# This shifts to the directory that you submitted the job from
+cd $PBS_O_WORKDIR
+
+aprun -n $NPROCS $PBS_O_WORKDIR/build/test $METRICS_FILE $EVENTS $TREE_DEGREE $INTERVAL 
+
