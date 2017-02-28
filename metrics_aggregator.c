@@ -501,7 +501,8 @@ void *start_communication(void *aggregator)
 
     /* Avoid race condition by electing the price value of data.quit across
      * all leaf processes */
-    int i, elected_quit_value = 0;
+
+    /*    int i, elected_quit_value = 0;
     for (i = 0; i < nleafs; ++i) {
       MPI_Reduce(&data.quit, &elected_quit_value, 1, MPI_INT, MPI_BOR, i, agg->comm_leafs);
       if (leaf_rank == i) {
@@ -509,6 +510,14 @@ void *start_communication(void *aggregator)
       }
       MPI_Barrier(agg->comm_leafs);
     }
+    */
+    int elected_quit_value;
+    MPI_Reduce(&data.quit, &elected_quit_value, 1, MPI_INT, MPI_BOR, 0, agg->comm_leafs);
+    if (leaf_rank == 0) {
+      data.quit = elected_quit_value;
+    }
+    MPI_Barrier(agg->comm_leafs);
+
 #endif
 
     data.timestamp = counter;
