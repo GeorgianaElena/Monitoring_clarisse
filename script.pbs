@@ -5,6 +5,8 @@
 #PBS -l walltime=0:2:0
 #PBS -A pr1u1352
 
+export MPICH_MAX_THREAD_SAFETY=multiple
+
 export NODES=8
 export ARCHER_CORES_PER_NODE=24 #8   #12 #11 #3 #24
 export NPROCS=$((ARCHER_CORES_PER_NODE*NODES))
