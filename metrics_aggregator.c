@@ -476,6 +476,65 @@ void *start_communication(void *aggregator)
   metrics_t data;
 
   data.max_degree = agg->max_degree;
+  data.parent_rank = get_parent(agg);
+  data.nprocs = nprocs;
+  data.quit = 0;
+
+  /* Send data periodically with different timestamps */
+  while (!data.quit) {
+#ifdef BENCHMARKING
+    if (counter == agg->max_timestamps - 1) {
+      data.quit = 1;
+    }
+#else
+    pthread_mutex_lock(&agg->glock);
+    if (agg->leafs_finished) 
+      data.quit = 1;
+    else 
+      data.quit = 0;
+    pthread_mutex_unlock(&agg->glock);
+#endif   
+    data.timestamp = counter;
+    initialize_metrics_crawler_number_from_file(agg, &data.metrics_nr, agg->aliases_file);
+    data.gather_info = malloc(data.metrics_nr * sizeof(aggregators_t));
+    data.update_file = metrics_crawler_results_file(agg, data.gather_info, agg->aliases_file);
+
+#ifdef BENCHMARKING
+    double start_time;
+    start_time = MPI_Wtime();
+    data.start_time = start_time;
+#endif
+    EVsubmit(source, &data, NULL);
+
+    free(data.gather_info);
+    ++counter;
+    usleep(agg->pulse_interval);
+  }
+  MPI_Barrier(agg->comm_leafs);
+  return NULL;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+/* Start propagating metrics values up through the tree topology */
+void *start_communication_old(void *aggregator)
+{
+  metrics_aggregator_t *agg = (metrics_aggregator_t *) aggregator;
+
+  int rank, leaf_rank, nleafs, nprocs;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+  MPI_Comm_size(MPI_COMM_WORLD, &nprocs);
+  MPI_Comm_rank(agg->comm_leafs, &leaf_rank);
+  MPI_Comm_size(agg->comm_leafs, &nleafs);
+
+
+  EVsource source = EVcreate_submit_handle(agg->current_state.conn_mgr, agg->current_state.bridge_stone,
+                                           metrics_format_list);
+
+  int counter = 0;
+
+  metrics_t data;
+
+  data.max_degree = agg->max_degree;
 
   data.parent_rank = get_parent(aggregator);
 
@@ -485,7 +544,7 @@ void *start_communication(void *aggregator)
 
   /* Send data periodically with different timestamps */
   while (!data.quit) {
-  MPI_Barrier(agg->comm_leafs);
+    MPI_Barrier(agg->comm_leafs);
 #ifdef BENCHMARKING
     if (counter == agg->max_timestamps - 1) {
       data.quit = 1;
@@ -511,6 +570,8 @@ void *start_communication(void *aggregator)
       MPI_Barrier(agg->comm_leafs);
     }
     */
+
+    // Florin: not necessary to have to many reduce as above
     int elected_quit_value;
     MPI_Reduce(&data.quit, &elected_quit_value, 1, MPI_INT, MPI_BOR, 0, agg->comm_leafs);
     if (leaf_rank == 0) {

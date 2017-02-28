@@ -45,11 +45,11 @@ set (MONITORING_VERSION_MINOR 0)
 add_definitions(-D_LARGEFILE64_SOURCE)
 
 #set compile flags
-#option(CLARISSE_TIMING "Use CLARISSE_TIMING" OFF)
+option(BENCHMARKING "Use BENCHMARKING" OFF)
 
-#if (CLARISSE_TIMING)
-#  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DCLARISSE_TIMING")
-#endif ()
+if (BENCHMARKING)
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DBENCHMARKING")
+endif ()
  
 include_directories (include)
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC -std=gnu11 -g") 
