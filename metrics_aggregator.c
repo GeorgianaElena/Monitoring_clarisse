@@ -327,7 +327,7 @@ int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
     }
 
     fclose(aggregator->results);
-    free(aggregator->benchmarking_results);
+    //free(aggregator->benchmarking_results);
 #endif
 
     pthread_mutex_lock(&aggregator->glock);
