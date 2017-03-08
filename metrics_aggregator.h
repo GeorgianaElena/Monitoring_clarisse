@@ -99,7 +99,7 @@ typedef struct _metrics_aggregator_t
   node_state_t current_state;
 
 #ifdef BENCHMARKING
-  long *benchmarking_results;
+  double *benchmarking_results;
 #else
   sys_metric_t *monitoring_results;
 #endif

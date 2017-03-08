@@ -289,7 +289,7 @@ int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
   procs_done = (event->timestamp == (aggregator->max_timestamps - 1));
 
   if(pulse == 0) {
-    aggregator->benchmarking_results = (long *) calloc (aggregator->max_timestamps, sizeof(long));
+    aggregator->benchmarking_results = (double *) calloc (aggregator->max_timestamps, sizeof(double));
   }
 
   aggregator->benchmarking_results[pulse] = end_time - event->start_time;
@@ -319,10 +319,11 @@ int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
 
   if(procs_done || event->quit || !event->metrics_nr) {
 #ifdef BENCHMARKING
-    printf("Writing in file benchmarking results\n");
+    //printf("Writing in file benchmarking results\n");
 
     for (long i = 0; i < aggregator->max_timestamps; ++i) {
-      fprintf(aggregator->results, "%ld %ld\n", i, aggregator->benchmarking_results[i]);
+      fprintf(stdout, "%ld %7.5f\n", i, aggregator->benchmarking_results[i]);
+      //fprintf(aggregator->results, "Pulsation=%4ld time=%7.5f\n", i, aggregator->benchmarking_results[i]);
     }
 
     fclose(aggregator->results);
