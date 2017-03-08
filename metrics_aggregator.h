@@ -70,7 +70,7 @@ typedef struct _metrics_t
   long timestamp;
   int quit;
 #ifdef BENCHMARKING
-  long start_time;
+  double start_time;
 #endif
 } metrics_t, *metrics_t_ptr;
 

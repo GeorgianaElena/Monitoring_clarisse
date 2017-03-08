@@ -286,6 +286,7 @@ int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
 
 #ifdef BENCHMARKING
   double end_time = MPI_Wtime();
+  //printf("end_time=%f event->start_time=%f \n", end_time, event->start_time);
   procs_done = (event->timestamp == (aggregator->max_timestamps - 1));
 
   if(pulse == 0) {
@@ -322,7 +323,7 @@ int final_result(CManager cm, void *vevent, void *client_data, attr_list attrs)
     //printf("Writing in file benchmarking results\n");
 
     for (long i = 0; i < aggregator->max_timestamps; ++i) {
-      fprintf(stdout, "%ld %7.5f\n", i, aggregator->benchmarking_results[i]);
+      fprintf(stdout, "iter=%ld time=%12.9f\n", i, aggregator->benchmarking_results[i]);
       //fprintf(aggregator->results, "Pulsation=%4ld time=%7.5f\n", i, aggregator->benchmarking_results[i]);
     }
 
@@ -503,6 +504,7 @@ void *start_communication(void *aggregator)
 #ifdef BENCHMARKING
     double start_time;
     start_time = MPI_Wtime();
+    //printf("start_time=%f\n", start_time);
     data.start_time = start_time;
 #endif
     EVsubmit(source, &data, NULL);
